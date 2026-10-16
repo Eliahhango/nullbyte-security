@@ -1,0 +1,15 @@
+{
+  "engagement": "acme-q4",
+  "authorized_all": false,
+  "intensity": "safe-active",
+  "allow_private": false,
+  "block_destructive": true,
+  "allow_model_scope_edit": false,
+  "include": [
+    { "host": "app.acme.test", "ports": [443, 8443] },
+    { "host": "*.acme.test" },
+    { "host": "10.20.0.0/24" },
+    { "host": "https://api.acme.test" }
+  ],
+  "exclude": ["billing.acme.test"]
+}

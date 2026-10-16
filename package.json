@@ -1,0 +1,19 @@
+{
+  "name": "nullbyte-security",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Security capability layer for the NullByte CLI — scope enforcement, recon, port scanning, scanner orchestration, secret scanning, CVSS-scored findings and reporting.",
+  "license": "MIT",
+  "author": "Eliahhango",
+  "scripts": {
+    "test": "node --test security-lib/__tests__/*.test.ts",
+    "lab": "node tools/lab/vulnerable-server.mjs"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.16.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,31 @@
+# dependencies
+node_modules/
+package-lock.json
+bun.lock
+pnpm-lock.yaml
+
+# secrets / credentials — never commit these
+*.key
+*.pem
+*.p12
+auth.json
+credentials.json
+.env
+.env.*
+
+# engagement state produced at runtime
+.nullbyte/
+**/.nullbyte/security/audit.jsonl
+**/.nullbyte/security/evidence/
+**/.nullbyte/security/reports/
+
+# lab artifacts
+tools/lab/certs/
+tools/lab/*.log
+tools/lab/*.bak
+
+# editor / os
+.DS_Store
+*.swp
+.idea/
+.vscode/

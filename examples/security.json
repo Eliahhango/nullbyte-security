@@ -1,0 +1,14 @@
+{
+  "authorized_all": true,
+  "intensity": "safe-active",
+  "allow_private": true,
+  "block_destructive": true,
+  "require_approval_for_intrusive": false,
+  "allow_model_scope_edit": false,
+  "plugins": {
+    "inject_workflow": true,
+    "protect_local_secrets": true,
+    "inject_permission_rules": true,
+    "ask_intrusive_commands": false
+  }
+}
