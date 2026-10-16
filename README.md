@@ -9,7 +9,8 @@ touching the host CLI.
 - 10 `sec_*` tools available to every agent
 - Authorized by default, with opt-in perimeter lockdown for real engagements
 - Findings, evidence, audit trail and reports persisted per project
-- 68 unit tests
+- 21-fragment methodology knowledge base covering the common vulnerability classes
+- 75 unit tests
 
 > Built for authorized security testing. Point it at systems you own or have
 > written permission to test.
@@ -30,7 +31,7 @@ dependencies. Override the target with `NULLBYTE_CONFIG=/path/to/.config/nullbyt
 Verify:
 
 ```bash
-cd ~/nullbyte-security && npm test        # 68 tests
+cd ~/nullbyte-security && npm test        # 75 tests
 nullbyte models                            # native surface unchanged
 ```
 
@@ -48,7 +49,7 @@ nullbyte models                            # native surface unchanged
 | `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed |
 | `sec_finding` | create/list/get/update findings; severity from CVSS 3.1 metrics; dedupe by fingerprint |
 | `sec_report` | preview or export the assessment as markdown + JSON |
-| `sec_methodology` | search/load shared knowledge fragments |
+| `sec_methodology` | search/load shared knowledge fragments (21, covering XSS, SQLi, SSRF, IDOR, auth/session, access control, path traversal, command injection, file upload, API testing, exploitation discipline) |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is —
@@ -132,7 +133,7 @@ security-lib/
   net/                         dns http tls headers fingerprint ports
   adapters/                    scanner registry + argv builders
   tools/                       the 10 sec_* tools
-  __tests__/                   68 tests
+  __tests__/                   75 tests
 <project>/.nullbyte/security/  engagement state (scope, findings, audit, evidence, reports)
 ```
 
