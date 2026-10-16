@@ -47,9 +47,9 @@ nullbyte models                            # native surface unchanged
 | `sec_scan` | external adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap (argv-only, availability-checked) |
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, values never printed |
 | `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed |
-| `sec_finding` | create/list/get/update findings; severity from CVSS 3.1 metrics; dedupe by fingerprint |
-| `sec_report` | preview or export the assessment as markdown + JSON |
-| `sec_methodology` | search/load shared knowledge fragments (21, covering XSS, SQLi, SSRF, IDOR, auth/session, access control, path traversal, command injection, file upload, API testing, exploitation discipline) |
+| `sec_finding` | create/list/get/update findings; status derived, never asserted; closure gate (confirmed / ruled_out / open_proof_gap); severity from CVSS 3.1 metrics; semantic dedupe; evidence-reference checks |
+| `sec_report` | preview or export the assessment as markdown + JSON, with closure summary |
+| `sec_methodology` | search/load shared knowledge fragments (25, covering XSS, SQLi, SSRF, IDOR, auth/session, access control, path traversal, command injection, file upload, API testing, SSTI, insecure deserialization, subdomain takeover, open redirect, exploitation discipline) |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is —
@@ -109,7 +109,10 @@ Four layers, outermost first:
    before the tool body runs. Enforces destructive refusal, the credential
    guard, and (in allow-list mode) target authorization for `bash`/`webfetch`.
 3. **Tool bodies** — per-call authorization, DNS re-validation, and an approval
-   hook for intrusive operations.
+   hook for intrusive operations. Port scanners authorize the host **and every
+   individual port**: a scope entry that allows only `127.0.0.1:8080` refuses a
+   scan of `8081`, and refuses the whole call if a port list mixes authorized
+   and unauthorized ports.
 4. **`experimental.chat.system.transform`** — injects the shared workflow
    (advisory only).
 

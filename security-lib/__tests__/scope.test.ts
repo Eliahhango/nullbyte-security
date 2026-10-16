@@ -10,7 +10,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { authorize, authorizeResolved, describeScope } from "../scope.ts"
+import { authorize, authorizePorts, authorizeResolved, describeScope, portAllowance } from "../scope.ts"
 import { DEFAULT_SCOPE, normalizeScope, validateScope, scopeTemplate } from "../config.ts"
 import { hostFromUrl, ipv4InCidr, isIp, isPrivateAddress, isUnconditionallyDenied } from "../netsafe.ts"
 import { engagementDir, resolveProjectRoot, setRuntimeRoot } from "../paths.ts"
@@ -194,3 +194,58 @@ test("hostFromUrl handles ports, ipv6 and paths", () => {
 test("homedir sanity: the default project root is never the filesystem root", () => {
   assert.notEqual(homedir(), "/")
 })
+
+/* ---------------------------------------------- multi-port scan regression --- */
+
+// Regression: sec_ports/sec_scan called authorize() with a host-only target, so
+// `target.port` was undefined and the entry's port allowance was never checked.
+// A scoped engagement that authorized only 127.0.0.1:8080 still scanned 8081.
+
+test("authorizePorts: refuses a scan containing a port outside the entry's allowance", () => {
+  const r = authorizePorts(LIST_MODE, "127.0.0.1", [8080, 8081], "safe-active")
+  assert.equal(r.allowed, false)
+  assert.deepEqual(r.deniedPorts, [8081])
+  assert.equal(r.decision.code, "scope.port")
+  assert.match(r.decision.reason, /8081/)
+})
+
+test("authorizePorts: allows a scan whose ports are all inside the allowance", () => {
+  const r = authorizePorts(LIST_MODE, "127.0.0.1", [8080, 8443], "safe-active")
+  assert.equal(r.allowed, true)
+  assert.deepEqual(r.deniedPorts, [])
+})
+
+test("authorizePorts: an unrestricted entry allows any port", () => {
+  const r = authorizePorts(LIST_MODE, "10.0.0.42", [22, 443, 65535], "safe-active")
+  assert.equal(r.allowed, true)
+})
+
+test("authorizePorts: authorized_all still permits everything", () => {
+  assert.equal(authorizePorts(AUTHORIZED_ALL, "anything.test", [1, 2, 3], "intrusive").allowed, true)
+})
+
+test("authorizePorts: an excluded host is refused for every port", () => {
+  const r = authorizePorts(LIST_MODE, "secret.example.com", [443], "passive")
+  assert.equal(r.allowed, false)
+  assert.equal(r.decision.code, "scope.excluded")
+})
+
+test("authorizePorts: intensity ceiling still applies", () => {
+  const r = authorizePorts(LIST_MODE, "10.0.0.42", [443], "intrusive")
+  assert.equal(r.allowed, false)
+  assert.equal(r.decision.code, "policy.intensity")
+})
+
+test("authorizePorts: metadata address is refused regardless of ports", () => {
+  const r = authorizePorts(LIST_MODE, "169.254.169.254", [80], "passive")
+  assert.equal(r.allowed, false)
+  assert.equal(r.decision.code, "net.metadata")
+})
+
+test("portAllowance: reports the entry's port restriction, or undefined when unrestricted", () => {
+  assert.deepEqual(portAllowance(LIST_MODE, "127.0.0.1"), [8080, 8443])
+  assert.equal(portAllowance(LIST_MODE, "10.0.0.42"), undefined)
+  assert.equal(portAllowance(LIST_MODE, "unlisted.test"), undefined)
+  assert.equal(portAllowance(AUTHORIZED_ALL, "anything.test"), undefined)
+})
+

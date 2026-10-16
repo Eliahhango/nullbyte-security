@@ -22,7 +22,8 @@ import {
 } from "../adapters/scanners.ts"
 import { saveEvidence } from "../evidence.ts"
 import { parsePortSpec } from "../net/ports.ts"
-import { enforce, splitTarget, type ToolCtxLike } from "./shared.ts"
+import { portAllowance } from "../scope.ts"
+import { enforce, enforcePorts, scopeFor, splitTarget, type ToolCtxLike } from "./shared.ts"
 import type { Intensity, Severity } from "../types.ts"
 
 const ADAPTERS = ["nmap", "nuclei", "nikto", "whatweb", "sslscan", "sqlmap"] as const
@@ -63,17 +64,44 @@ export const secScan = tool({
     const intensity: Intensity =
       toolId === "nmap" && args.profile === "intrusive" ? "intrusive" : toolId === "sqlmap" ? "intrusive" : "safe-active"
 
-    await enforce({
-      ctx: c,
-      tool: `sec_scan:${toolId}`,
-      target,
-      intensity,
-      purpose: `${toolId} scan`,
-    })
+    const loaded = scopeFor(c.worktree)
+    let ports = args.ports ? parsePortSpec(args.ports) : undefined
 
-    const root = (await import("../config.ts")).loadScope(c.worktree).paths.root
+    // A scanner with no explicit port list falls back to an implicit default set
+    // the operator never authorized. When the scope entry restricts ports, pin
+    // the scan to the authorized set instead of trusting the scanner's default.
+    if (!ports?.length) {
+      const allowance = portAllowance(loaded.scope, target.host)
+      if (allowance?.length) ports = allowance
+    }
+    if (!ports?.length && target.port) ports = [target.port]
+
+    // A port supplied in the target (`host:port`) must be authorized too, even
+    // when it is not part of the explicit list — otherwise it is a way around
+    // the per-port check.
+    if (ports?.length && target.port && !ports.includes(target.port)) ports = [...ports, target.port]
+
+    if (ports?.length) {
+      await enforcePorts({
+        ctx: c,
+        tool: `sec_scan:${toolId}`,
+        host: target.host,
+        ports,
+        intensity,
+        purpose: `${toolId} scan`,
+      })
+    } else {
+      await enforce({
+        ctx: c,
+        tool: `sec_scan:${toolId}`,
+        target,
+        intensity,
+        purpose: `${toolId} scan`,
+      })
+    }
+
+    const root = loaded.paths.root
     const timeoutMs = Math.max(5000, Math.min(args.timeout_ms ?? 300000, 900000))
-    const ports = args.ports ? parsePortSpec(args.ports) : undefined
 
     c.metadata?.({ title: `sec_scan ${toolId} ${target.host}` })
 

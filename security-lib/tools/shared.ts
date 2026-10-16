@@ -8,7 +8,7 @@
  */
 
 import { loadScope, type LoadedScope } from "../config.ts"
-import { authorize, authorizeResolved, describeScope } from "../scope.ts"
+import { authorize, authorizePorts, authorizeResolved, describeScope } from "../scope.ts"
 import { resolveAddresses } from "../net/dns.ts"
 import { isIp } from "../netsafe.ts"
 import { writeAudit } from "../audit.ts"
@@ -58,12 +58,92 @@ export interface EnforceArgs {
   intensity: Intensity
   /** resolve the hostname and re-validate every address (default true) */
   resolve?: boolean
+  /** human-readable description of what will happen, for the approval prompt */
   purpose?: string
 }
 
 export interface EnforceResult {
   loaded: LoadedScope
   decision: Decision
+}
+
+/**
+ * Authorize a multi-port scan of one host.
+ *
+ * `enforce()` checks `target.port`, which is undefined for a port scan — so on
+ * its own it would authorize the host and then happily probe ports the scope
+ * entry never allowed. This checks the host (with DNS re-validation) and then
+ * every individual port, refusing the whole scan if any port is out of scope.
+ */
+export async function enforcePorts(args: {
+  ctx: ToolCtxLike
+  tool: string
+  host: string
+  ports: readonly number[]
+  intensity: Intensity
+  purpose?: string
+}): Promise<EnforceResult> {
+  const { ctx, host, ports, intensity } = args
+  const loaded = scopeFor(ctx.worktree)
+  const root = loaded.paths.root
+
+  if (ctx.abort?.aborted) throw new SecurityDenied("aborted", "operation cancelled before it started")
+
+  // host-level decision first (deny / exclude / private / intensity), with DNS re-validation
+  let decision = authorize(loaded.scope, { host }, intensity)
+  if (decision.allowed && !loaded.scope.authorized_all && !isIp(host)) {
+    const ips = await resolveAddresses(host, 5000)
+    if (ips.length) {
+      const resolved = authorizeResolved(loaded.scope, { host }, ips)
+      if (!resolved.allowed) decision = resolved
+    } else if (!loaded.scope.allow_private) {
+      decision = {
+        allowed: false,
+        code: "dns.unresolved",
+        reason: `'${host}' did not resolve; cannot confirm it stays inside scope`,
+      }
+    }
+  }
+  if (!decision.allowed) fail(ctx, root, args.tool, decision, { host })
+
+  // then every port, against the matched entry's allowance
+  const portCheck = authorizePorts(loaded.scope, host, ports, intensity)
+  if (!portCheck.allowed) fail(ctx, root, args.tool, portCheck.decision, { host })
+
+  if (portCheck.decision.requiresApproval) {
+    if (!ctx.ask) {
+      fail(
+        ctx,
+        root,
+        args.tool,
+        {
+          allowed: false,
+          code: "policy.no-approval-channel",
+          reason: `'${intensity}' operations require approval but no approval channel is available in this context`,
+        },
+        { host },
+      )
+    }
+    await ctx.ask({
+      permission: "sec.intrusive",
+      patterns: [`${args.tool}:${host}`],
+      always: [],
+      metadata: { tool: args.tool, target: host, intensity, ports: ports.length, purpose: args.purpose ?? "port scan" },
+    })
+  }
+
+  writeAudit(root, {
+    sessionID: ctx.sessionID,
+    agent: ctx.agent,
+    tool: args.tool,
+    decision: "allow",
+    code: portCheck.decision.code,
+    reason: `${ports.length} port(s) authorized on '${host}'`,
+    args: `${host} ports=${ports.length}`,
+    targets: [host],
+  })
+
+  return { loaded, decision: portCheck.decision }
 }
 
 /**

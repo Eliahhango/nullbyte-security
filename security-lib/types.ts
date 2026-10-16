@@ -12,7 +12,15 @@ export type Confidence = "low" | "medium" | "high"
 
 export type VerificationStatus = "unverified" | "verified" | "refuted" | "inconclusive"
 
+/**
+ * Lifecycle status. DERIVED from the closure state and remediation, never set
+ * directly by a caller: a model cannot promote its own finding to `confirmed`.
+ * See `closure` below.
+ */
 export type FindingStatus = "open" | "confirmed" | "remediated" | "accepted-risk" | "false-positive"
+
+/** How much work the fix is expected to be. */
+export type FixEffort = "trivial" | "low" | "medium" | "high"
 
 /** A concrete network target derived from user input or tool output. */
 export interface Target {
@@ -115,6 +123,38 @@ export interface FindingInput {
   reproduction?: string
   remediation: string
   limitations?: string
+
+  // ---- closure discipline (see precision.ts) ----------------------------
+  /**
+   * The state the caller believes applies. It is a CLAIM: the recorded closure
+   * is granted only if the supporting evidence is actually present, otherwise
+   * it is downgraded to `open_proof_gap`.
+   */
+  closure?: ClosureState
+  /** required for closure=confirmed: what demonstrates the behaviour */
+  demonstrated_by?: string
+  /** required for closure=ruled_out: the specific control that makes it safe */
+  ruled_out_by?: string
+  /** required for closure=ruled_out: where that control lives or was observed */
+  ruled_out_at?: string
+
+  // ---- report quality ---------------------------------------------------
+  /** what would disprove this, and what was checked and did not */
+  counterevidence?: string
+  /** conditions that would raise or lower the severity */
+  severity_change_conditions?: string
+  /** explicit assumptions the finding depends on */
+  assumptions?: string
+  fix_effort?: FixEffort
+}
+
+/** The evidence-backed state of a finding. */
+export type ClosureState = "confirmed" | "ruled_out" | "open_proof_gap"
+
+/** Per-reference result of checking the finding's evidence against reality. */
+export interface EvidenceRefCheck {
+  ref: string
+  state: "exists" | "missing" | "forbidden" | "unavailable" | "invalid"
 }
 
 export interface Finding extends FindingInput {
@@ -122,7 +162,10 @@ export interface Finding extends FindingInput {
   sessionID: string
   created_at: string
   updated_at: string
+  /** DERIVED from closure + remediation; not caller-settable */
   status: FindingStatus
+  /** the granted closure state (may differ from the requested one) */
+  closure: ClosureState
   /** derived from CVSS when cvss_breakdown is present */
   severity: Severity
   cvss_score?: number
@@ -131,7 +174,11 @@ export interface Finding extends FindingInput {
   fingerprint: string
   /** ids of findings this one duplicates */
   duplicate_of?: string
+  /** result of verifying evidence_refs against the filesystem/evidence store */
+  evidence_check?: EvidenceRefCheck[]
   revision: number
+  /** set when the closure claim was not granted */
+  closure_downgraded?: boolean
 }
 
 export const SEVERITY_ORDER: Record<Severity, number> = {

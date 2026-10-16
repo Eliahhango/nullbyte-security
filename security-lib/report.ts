@@ -10,7 +10,7 @@
 import { writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { ensureDir } from "./paths.ts"
-import { severitySummary } from "./findings.ts"
+import { closureSummary, severitySummary } from "./findings.ts"
 import { redactSecrets } from "./redact.ts"
 import type { EvidenceRecord } from "./evidence.ts"
 import type { Finding, Severity } from "./types.ts"
@@ -68,6 +68,13 @@ export function renderMarkdown(input: ReportInput): string {
     lines.push(`| ${SEV_LABEL[sev]} | ${counts[sev]} |`)
   }
   lines.push("")
+  const closures = closureSummary(input.findings)
+  lines.push(
+    `Closure: **${closures.confirmed}** confirmed, **${closures.open_proof_gap}** open proof gap, ` +
+      `**${closures.ruled_out}** ruled out. A proof gap is not a dismissal — it means the candidate was ` +
+      `plausible and neither confirmed nor excluded within this engagement.`,
+  )
+  lines.push("")
 
   if (input.findings.length === 0) {
     lines.push("No findings were recorded. This is not evidence of absence: see Limitations.")
@@ -86,8 +93,10 @@ export function renderMarkdown(input: ReportInput): string {
     lines.push(`- **Severity:** ${SEV_LABEL[f.severity]}${f.cvss_score !== undefined ? ` (CVSS 3.1 ${f.cvss_score.toFixed(1)})` : ""}`)
     if (f.cvss_vector) lines.push(`- **CVSS vector:** \`${f.cvss_vector}\``)
     lines.push(`- **Status:** ${f.status}`)
+    lines.push(`- **Closure:** ${f.closure}${f.closure_downgraded ? " (downgraded from the requested state — the claim was not supported)" : ""}`)
     lines.push(`- **Confidence:** ${f.confidence}`)
     lines.push(`- **Verification:** ${f.verification}`)
+    if (f.fix_effort) lines.push(`- **Fix effort:** ${f.fix_effort}`)
     lines.push(`- **Affected asset:** ${esc(f.target)}${f.endpoint ? ` → ${esc(f.endpoint)}` : ""}${f.method ? ` (${f.method})` : ""}`)
     if (f.cve) lines.push(`- **CVE:** ${f.cve}`)
     if (f.cwe) lines.push(`- **CWE:** ${f.cwe}`)
@@ -101,6 +110,18 @@ export function renderMarkdown(input: ReportInput): string {
     lines.push("")
     lines.push(esc(f.impact))
     lines.push("")
+    if (f.demonstrated_by) {
+      lines.push("**Demonstrated by**")
+      lines.push("")
+      lines.push(esc(f.demonstrated_by))
+      lines.push("")
+    }
+    if (f.ruled_out_by) {
+      lines.push("**Ruled out by**")
+      lines.push("")
+      lines.push(`${esc(f.ruled_out_by)}${f.ruled_out_at ? ` — at ${esc(f.ruled_out_at)}` : ""}`)
+      lines.push("")
+    }
     lines.push("**Evidence**")
     lines.push("")
     lines.push("```")
@@ -119,6 +140,24 @@ export function renderMarkdown(input: ReportInput): string {
     lines.push("")
     lines.push(esc(f.remediation))
     lines.push("")
+    if (f.counterevidence) {
+      lines.push("**Counterevidence considered**")
+      lines.push("")
+      lines.push(esc(f.counterevidence))
+      lines.push("")
+    }
+    if (f.severity_change_conditions) {
+      lines.push("**Severity changes if**")
+      lines.push("")
+      lines.push(esc(f.severity_change_conditions))
+      lines.push("")
+    }
+    if (f.assumptions) {
+      lines.push("**Assumptions**")
+      lines.push("")
+      lines.push(esc(f.assumptions))
+      lines.push("")
+    }
     if (f.limitations) {
       lines.push("**Limitations / assumptions**")
       lines.push("")
@@ -128,7 +167,11 @@ export function renderMarkdown(input: ReportInput): string {
     if (f.evidence_refs?.length) {
       lines.push("**Evidence references**")
       lines.push("")
-      for (const ref of f.evidence_refs) lines.push(`- ${ref}`)
+      const stateOf = new Map((f.evidence_check ?? []).map((c) => [c.ref, c.state]))
+      for (const ref of f.evidence_refs) {
+        const state = stateOf.get(ref)
+        lines.push(`- ${ref}${state ? ` — ${state}` : ""}`)
+      }
       lines.push("")
     }
   })
@@ -169,6 +212,7 @@ export function renderJson(input: ReportInput): string {
       provenance: input.provenance,
       scope: input.scopeSummary,
       summary: severitySummary(input.findings),
+      closure_summary: closureSummary(input.findings),
       findings: input.findings,
       evidence: input.evidence,
       limitations: input.limitations ?? null,

@@ -165,6 +165,70 @@ export function authorize(
 }
 
 /**
+ * The port allowance for `host`, if the matched include entry restricts ports.
+ * Returns `undefined` when the host is unrestricted (or covered by an
+ * `authorized_all` engagement). Used by scanners that would otherwise fall back
+ * to an implicit default port set the operator never authorized.
+ */
+export function portAllowance(scope: Scope, host: string): number[] | undefined {
+  if (scope.authorized_all) return undefined
+  const h = normalizeHost(host)
+  if (!h) return undefined
+  for (const entry of scope.include) {
+    if (hostMatchesEntry(entry.host, h)) return entry.ports
+  }
+  return undefined
+}
+
+/**
+ * Authorize a *set* of ports on one host.
+ *
+ * The port scanner probes many ports on a single host, so `target.port` is
+ * undefined and the per-entry port allowance in step 5 of `authorize` would
+ * never be consulted. This closes that hole: every port is checked against the
+ * matched entry, and the scan is refused if any port falls outside it.
+ */
+export function authorizePorts(
+  scope: Scope,
+  host: string,
+  ports: readonly number[],
+  requiredIntensity: Intensity,
+): { allowed: boolean; decision: Decision; deniedPorts: number[] } {
+  const deniedPorts: number[] = []
+  let firstDeny: Decision | undefined
+  let allowed: Decision | undefined
+
+  for (const port of ports) {
+    const d = authorize(scope, { host, port }, requiredIntensity)
+    if (d.allowed) {
+      allowed ??= d
+    } else {
+      deniedPorts.push(port)
+      firstDeny ??= d
+    }
+  }
+
+  if (firstDeny) {
+    const listed = deniedPorts.slice(0, 8).join(", ")
+    const more = deniedPorts.length > 8 ? ` and ${deniedPorts.length - 8} more` : ""
+    return {
+      allowed: false,
+      deniedPorts,
+      decision: {
+        ...firstDeny,
+        reason: `${deniedPorts.length} of ${ports.length} port(s) are outside scope (${listed}${more}). ${firstDeny.reason}`,
+      },
+    }
+  }
+
+  return {
+    allowed: true,
+    deniedPorts: [],
+    decision: allowed ?? authorize(scope, { host }, requiredIntensity),
+  }
+}
+
+/**
  * After resolving a hostname, re-check every resolved address. This closes the
  * DNS-rebinding / scope-laundering hole where a scoped name points at
  * out-of-scope or metadata infrastructure.

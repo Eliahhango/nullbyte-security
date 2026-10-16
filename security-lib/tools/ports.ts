@@ -7,7 +7,7 @@ import { tool } from "@opencode-ai/plugin"
 import { COMMON_PORTS, parsePortSpec, scanPorts } from "../net/ports.ts"
 import { loadScope } from "../config.ts"
 import { saveEvidence } from "../evidence.ts"
-import { enforce, splitTarget, type ToolCtxLike } from "./shared.ts"
+import { enforcePorts, splitTarget, type ToolCtxLike } from "./shared.ts"
 
 export const secPorts = tool({
   description:
@@ -37,10 +37,11 @@ export const secPorts = tool({
     }
     if (!ports.length) return "error: no ports to scan"
 
-    await enforce({
+    await enforcePorts({
       ctx: c,
       tool: "sec_ports",
-      target,
+      host: target.host,
+      ports,
       intensity: "safe-active",
       purpose: `connect scan of ${ports.length} ports`,
     })

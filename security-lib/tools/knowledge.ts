@@ -1,41 +1,83 @@
 /**
  * sec_methodology and sec_audit — shared knowledge access and the audit trail.
+ *
+ * sec_methodology uses progressive disclosure: `search` returns metadata only
+ * (cheap, safe to call repeatedly), `load` returns the full content of up to
+ * MAX_SELECTED_FRAGMENTS fragments under a byte budget. Loaded content is
+ * wrapped in a non-grant notice and its class-specific precision requirements,
+ * so methodology can inform the work without granting scope or authority.
  */
 
 import { tool } from "@opencode-ai/plugin"
-import { listFragments, loadFragment, searchFragments } from "../methodology.ts"
+import {
+  MAX_SELECTED_FRAGMENTS,
+  categorySummary,
+  listFragments,
+  renderKnowledge,
+  searchCatalog,
+} from "../methodology.ts"
 import { readAudit } from "../audit.ts"
 import { loadScope } from "../config.ts"
 import type { ToolCtxLike } from "./shared.ts"
 
 export const secMethodology = tool({
   description:
-    "Shared pentest methodology fragments — the agent-agnostic knowledge base. action=search finds fragments by keyword " +
-    "(xss, sqli, ssrf, idor, rce, lfi, jwt, scope, recon, tls, headers, scanners, verification, evidence, reporting, " +
-    "prompt-injection); action=load returns one fragment in full; action=list shows everything available. Consult these " +
-    "instead of improvising process or payloads.",
+    "Shared pentest methodology — the agent-agnostic knowledge base, 23 fragments across process, vulnerability and " +
+    "analysis categories. action=search returns matching fragments as metadata (id, category, title, description) without " +
+    "loading content; call it with no query to get category counts. action=load returns the full content of up to " +
+    `${MAX_SELECTED_FRAGMENTS} fragments by id (bare like 'xss', category-qualified like 'vulnerability/xss', or a partial id). ` +
+    "action=list shows every id. Vulnerability fragments ship with precision requirements that override the fragment text, " +
+    "so load them before testing a class rather than improvising payloads.",
   args: {
     action: tool.schema.enum(["search", "load", "list"]).describe("operation"),
-    query: tool.schema.string().optional().describe("search terms (action=search)"),
-    id: tool.schema.string().optional().describe("fragment id (action=load)"),
-    limit: tool.schema.number().optional().describe("max fragments to return for action=search (default 3)"),
+    query: tool.schema.string().optional().describe("search terms, e.g. xss, sqli, ssrf, idor, rce, lfi, jwt, recon (action=search)"),
+    category: tool.schema.enum(["process", "vulnerability", "analysis"]).optional().describe("restrict search to a category (action=search)"),
+    limit: tool.schema.number().optional().describe("max results for action=search (default 8)"),
+    id: tool.schema.string().optional().describe("single fragment id (action=load)"),
+    ids: tool.schema.array(tool.schema.string()).optional().describe("fragment ids to load together (action=load)"),
   },
   async execute(args) {
     if (args.action === "list") {
-      return listFragments()
-        .map((f) => `${f.id} — ${f.title} [${f.tags.join(", ")}]`)
+      const cats = categorySummary()
+      return [
+        `categories: ${cats.map((c) => `${c.category} (${c.count})`).join(", ")}`,
+        "",
+        ...listFragments().map((f) => `${f.id} — ${f.title} [${f.tags.join(", ")}]`),
+      ].join("\n")
+    }
+
+    if (args.action === "load") {
+      const requested = args.ids?.length ? args.ids : args.id ? [args.id] : []
+      if (!requested.length) return "error: action=load requires id or ids"
+      const rendered = renderKnowledge(requested)
+      if (!rendered.ok) return `load refused:\n${rendered.problems.map((p) => `  - ${p}`).join("\n")}`
+      return rendered.content
+    }
+
+    if (!args.query && !args.category) {
+      const catalog = searchCatalog(undefined, undefined)
+      return catalog.hint ?? "no fragments available"
+    }
+    const catalog = searchCatalog(args.query, args.category, args.limit ?? 8)
+    if (!catalog.results.length) {
+      return [
+        `no methodology fragment matched${args.query ? ` '${args.query}'` : ""}${args.category ? ` in category ${args.category}` : ""}.`,
+        catalog.hint ?? "",
+        `available: ${listFragments().map((f) => f.id).join(", ")}`,
+      ]
+        .filter(Boolean)
         .join("\n")
     }
-    if (args.action === "load") {
-      if (!args.id) return "error: action=load requires id"
-      const f = loadFragment(args.id)
-      return f ? `# ${f.title} (${f.id})\ntags: ${f.tags.join(", ")}\n\n${f.body}` : `no fragment matching '${args.id}'`
-    }
-    if (!args.query) return "error: action=search requires a query"
-    const limit = Math.max(1, Math.min(Math.trunc(args.limit ?? 3), listFragments().length))
-    const hits = searchFragments(args.query, limit)
-    if (!hits.length) return `no methodology fragment matched '${args.query}'. Available:\n${listFragments().map((f) => `  ${f.id}`).join("\n")}`
-    return hits.map((f) => `# ${f.title} (${f.id})\n${f.body}`).join("\n\n---\n\n")
+    return [
+      `${catalog.total_matches} match(es)${catalog.has_more ? `, showing ${catalog.results.length} — narrow the query or raise limit` : ""}:`,
+      "",
+      ...catalog.results.map(
+        (r) =>
+          `${r.qualified_id}${r.has_precision_note ? " [precision rules]" : ""} — ${r.description}`,
+      ),
+      "",
+      "Load the ones you need with action=load ids=[...].",
+    ].join("\n")
   },
 })
 

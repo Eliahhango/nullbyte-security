@@ -78,8 +78,67 @@ test("create derives severity from CVSS when metrics are supplied", () => {
   assert.equal(r.problems.length, 0)
   assert.equal(r.finding?.severity, "critical")
   assert.equal(r.finding?.cvss_score, 9.8)
-  assert.equal(r.finding?.status, "confirmed")
   assert.match(r.finding!.id, /^F-/)
+  // A bare `verification: "verified"` flag is a claim, not evidence: the closure
+  // stays open until something actually demonstrates the behaviour.
+  assert.equal(r.finding?.closure, "open_proof_gap")
+  assert.equal(r.finding?.status, "open")
+})
+
+test("a finding is only confirmed when something demonstrates it", () => {
+  const dir = root()
+  const claimed = createFinding(
+    dir,
+    "s1",
+    finding({ closure: "confirmed", demonstrated_by: "the scanner reported it" }),
+  )
+  assert.equal(claimed.finding?.closure, "open_proof_gap", "an assertion must not be granted confirmed")
+  assert.equal(claimed.finding?.status, "open")
+  assert.equal(claimed.closureDowngraded, true)
+  assert.ok(claimed.problems.some((p) => /reproduction|evidence reference/.test(p)))
+
+  const proven = createFinding(
+    dir,
+    "s1",
+    finding({
+      title: "Server-side template injection in the invoice template",
+      description: "The invoice name field is rendered through the template engine without sandboxing.",
+      endpoint: "/invoice",
+      closure: "confirmed",
+      demonstrated_by: "the response evaluated a template expression, returning the arithmetic result",
+      reproduction: "POST /invoice name={{7*7}} returned 49 in the rendered document",
+    }),
+  )
+  assert.equal(proven.finding?.closure, "confirmed")
+  assert.equal(proven.finding?.status, "confirmed")
+  assert.equal(proven.closureDowngraded, undefined)
+})
+
+test("ruled_out requires a named control and where it runs", () => {
+  const dir = root()
+  const vague = createFinding(dir, "s1", finding({ closure: "ruled_out" }))
+  assert.equal(vague.finding?.closure, "open_proof_gap", "a bare assurance must not rule a finding out")
+  assert.ok(vague.problems.some((p) => p.includes("ruled_out_by")))
+
+  const named = createFinding(
+    dir,
+    "s1",
+    finding({
+      title: "NoSQL operator injection in the login filter",
+      closure: "ruled_out",
+      ruled_out_by: "parameterised binding rejects operator objects before the query runs",
+      ruled_out_at: "src/auth/login.ts:88",
+    }),
+  )
+  assert.equal(named.finding?.closure, "ruled_out")
+  assert.equal(named.finding?.status, "false-positive")
+})
+
+test("open_proof_gap is always accepted — a real bug is never lost", () => {
+  const r = createFinding(root(), "s1", finding({ closure: "open_proof_gap", confidence: "low", limitations: "could not reach the backend" }))
+  assert.equal(r.finding?.closure, "open_proof_gap")
+  assert.equal(r.closureDowngraded, undefined)
+  assert.equal(r.problems.length, 0)
 })
 
 test("create requires limitations when confidence is not high", () => {
@@ -134,10 +193,80 @@ test("update requires a reason and bumps the revision", () => {
   const dir = root()
   const id = createFinding(dir, "s1", finding()).finding!.id
   assert.ok(updateFinding(dir, id, { severity: "critical" }, "").problems.length > 0)
-  const ok = updateFinding(dir, id, { severity: "critical", status: "confirmed" }, "operator re-rated after review")
+  const ok = updateFinding(
+    dir,
+    id,
+    { severity: "critical", counterevidence: "the WAF was checked and did not block the payload" },
+    "operator re-rated after review",
+  )
   assert.equal(ok.finding?.severity, "critical")
   assert.equal(ok.finding?.revision, 2)
   assert.equal(getFinding(dir, id)?.severity, "critical")
+})
+
+test("status cannot be set directly, and a stale revision is refused", () => {
+  const dir = root()
+  const id = createFinding(dir, "s1", finding()).finding!.id
+
+  // `status` is not a writable field at all — the store derives it, so a
+  // status-only update is refused rather than silently promoting the finding.
+  const attempt = updateFinding(dir, id, { status: "confirmed" } as never, "try to promote it")
+  assert.equal(attempt.finding, undefined)
+  assert.match(attempt.problems.join(" "), /no effective change/)
+  assert.equal(getFinding(dir, id)?.status, "open", "status must stay derived from closure")
+  assert.equal(getFinding(dir, id)?.closure, "open_proof_gap")
+  assert.equal(getFinding(dir, id)?.revision, 1, "a refused update must not churn the revision")
+
+  // optimistic concurrency: the second writer using the old revision loses
+  const first = updateFinding(dir, id, { impact: "restated impact" }, "clarify", { expectedRevision: 1 })
+  assert.equal(first.finding?.revision, 2)
+  const stale = updateFinding(dir, id, { impact: "other edit" }, "concurrent edit", { expectedRevision: 1 })
+  assert.equal(stale.finding, undefined)
+  assert.equal(stale.conflict, true)
+  assert.match(stale.problems.join(" "), /conflict/)
+})
+
+test("evidence references are verified: absent refs are flagged, unreadable ones are not", () => {
+  const dir = root()
+  const r = createFinding(
+    dir,
+    "s1",
+    finding({ evidence_refs: ["./does-not-exist.txt", "E-deadbeef"] }),
+  )
+  assert.equal(r.finding?.evidence_check?.length, 2)
+  assert.deepEqual(
+    r.finding?.evidence_check?.map((c) => c.state),
+    ["missing", "missing"],
+  )
+
+  // a real file resolves
+  const real = createFinding(
+    dir,
+    "s1",
+    finding({ title: "Another issue", endpoint: "/other", evidence_refs: ["./findings.json"] }),
+  )
+  assert.equal(real.finding?.evidence_check?.[0].state, "exists")
+})
+
+test("semantic similarity flags a near-duplicate without merging it", () => {
+  const dir = root()
+  createFinding(dir, "s1", finding())
+  // same endpoint and CWE, restated wording — treated as the same flaw
+  const dupe = createFinding(
+    dir,
+    "s1",
+    finding({ title: "XSS reflected in the search query parameter", description: "The search query parameter is reflected into the response without encoding." }),
+  )
+  assert.equal(dupe.finding, undefined)
+  assert.equal(dupe.duplicateReason, "semantic")
+
+  // a genuinely different surface is a distinct finding
+  const distinct = createFinding(
+    dir,
+    "s1",
+    finding({ title: "Server-side template injection in the invoice template", description: "The invoice name field is rendered through the template engine.", endpoint: "/invoice" }),
+  )
+  assert.ok(distinct.finding, "a different surface must not be merged")
 })
 
 /* ------------------------------------------------------------- evidence --- */
