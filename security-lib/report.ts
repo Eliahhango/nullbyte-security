@@ -26,6 +26,8 @@ export interface ReportInput {
   evidenceContent?: Record<string, string>
   /** true when redaction was deliberately skipped — adds a warning banner */
   unredacted?: boolean
+  /** what this report covers (session/target), and what selection excluded */
+  selectionNote?: string
   limitations?: string
   generatedAt?: string
   /** tool/agent provenance for the report header */
@@ -71,6 +73,7 @@ export function renderMarkdown(input: ReportInput): string {
   lines.push(`- Session: ${input.sessionID}`)
   if (input.provenance) lines.push(`- Produced by: ${input.provenance}`)
   lines.push(`- Findings: ${input.findings.length}`)
+  if (input.selectionNote) lines.push(`- Coverage: ${input.selectionNote}`)
   lines.push("")
   if (input.unredacted) lines.push(...UNREDACTED_BANNER_MD)
 
@@ -327,24 +330,24 @@ export function renderHtml(input: ReportInput): string {
   const findingHtml = ordered
     .map((f, i) => {
       const meta: string[] = [
-        `<div><span class="k">ID</span><span class="v">${escHtml(f.id)}</span></div>`,
-        `<div><span class="k">Severity</span><span class="v"><span class="badge ${SEV_CLASS[f.severity]}">${escHtml(SEV_LABEL[f.severity])}</span>${
+        `<div class="cell"><span class="k">ID</span><span class="v">${escHtml(f.id)}</span></div>`,
+        `<div class="cell"><span class="k">Severity</span><span class="v"><span class="badge ${SEV_CLASS[f.severity]}">${escHtml(SEV_LABEL[f.severity])}</span>${
           f.cvss_score !== undefined ? ` CVSS 3.1 ${f.cvss_score.toFixed(1)}` : ""
         }</span></div>`,
-        f.cvss_vector ? `<div><span class="k">CVSS vector</span><span class="v"><code>${escHtml(f.cvss_vector)}</code></span></div>` : "",
-        `<div><span class="k">Status</span><span class="v">${escHtml(f.status)}</span></div>`,
-        `<div><span class="k">Closure</span><span class="v">${escHtml(f.closure)}${
+        f.cvss_vector ? `<div class="cell"><span class="k">CVSS vector</span><span class="v"><code>${escHtml(f.cvss_vector)}</code></span></div>` : "",
+        `<div class="cell"><span class="k">Status</span><span class="v">${escHtml(f.status)}</span></div>`,
+        `<div class="cell"><span class="k">Closure</span><span class="v">${escHtml(f.closure)}${
           f.closure_downgraded ? " <em>(downgraded — the claim was not supported)</em>" : ""
         }</span></div>`,
-        `<div><span class="k">Confidence</span><span class="v">${escHtml(f.confidence)}</span></div>`,
-        `<div><span class="k">Verification</span><span class="v">${escHtml(f.verification)}</span></div>`,
-        f.fix_effort ? `<div><span class="k">Fix effort</span><span class="v">${escHtml(f.fix_effort)}</span></div>` : "",
-        `<div><span class="k">Affected asset</span><span class="v">${escHtml(f.target)}${f.endpoint ? ` → ${escHtml(f.endpoint)}` : ""}${
+        `<div class="cell"><span class="k">Confidence</span><span class="v">${escHtml(f.confidence)}</span></div>`,
+        `<div class="cell"><span class="k">Verification</span><span class="v">${escHtml(f.verification)}</span></div>`,
+        f.fix_effort ? `<div class="cell"><span class="k">Fix effort</span><span class="v">${escHtml(f.fix_effort)}</span></div>` : "",
+        `<div class="cell"><span class="k">Affected asset</span><span class="v">${escHtml(f.target)}${f.endpoint ? ` → ${escHtml(f.endpoint)}` : ""}${
           f.method ? ` (${escHtml(f.method)})` : ""
         }</span></div>`,
-        f.cve ? `<div><span class="k">CVE</span><span class="v">${escHtml(f.cve)}</span></div>` : "",
-        f.cwe ? `<div><span class="k">CWE</span><span class="v">${escHtml(f.cwe)}</span></div>` : "",
-        `<div><span class="k">Detected by</span><span class="v">${escHtml(f.source)}</span></div>`,
+        f.cve ? `<div class="cell"><span class="k">CVE</span><span class="v">${escHtml(f.cve)}</span></div>` : "",
+        f.cwe ? `<div class="cell"><span class="k">CWE</span><span class="v">${escHtml(f.cwe)}</span></div>` : "",
+        `<div class="cell"><span class="k">Detected by</span><span class="v">${escHtml(f.source)}</span></div>`,
       ]
         .filter(Boolean)
         .join("")
@@ -398,12 +401,12 @@ ${input.evidence
     return `<article class="finding">
 <h2><code>${escHtml(e.id)}</code> ${escHtml(e.label)}</h2>
 <div class="meta">
-  <div><span class="k">Source</span><span class="v">${escHtml(e.source)}</span></div>
-  ${e.target ? `<div><span class="k">Target</span><span class="v">${escHtml(e.target)}</span></div>` : ""}
-  <div><span class="k">Captured</span><span class="v">${escHtml(e.created_at)}</span></div>
-  <div><span class="k">Bytes</span><span class="v">${e.bytes}</span></div>
-  <div><span class="k">Redacted at capture</span><span class="v">${e.redacted ? "yes" : "no"}</span></div>
-  <div><span class="k">SHA-256</span><span class="v"><code>${escHtml(e.sha256)}</code></span></div>
+  <div class="cell"><span class="k">Source</span><span class="v">${escHtml(e.source)}</span></div>
+  ${e.target ? `<div class="cell"><span class="k">Target</span><span class="v">${escHtml(e.target)}</span></div>` : ""}
+  <div class="cell"><span class="k">Captured</span><span class="v">${escHtml(e.created_at)}</span></div>
+  <div class="cell"><span class="k">Bytes</span><span class="v">${e.bytes}</span></div>
+  <div class="cell"><span class="k">Redacted at capture</span><span class="v">${e.redacted ? "yes" : "no"}</span></div>
+  <div class="cell"><span class="k">SHA-256</span><span class="v"><code>${escHtml(e.sha256)}</code></span></div>
 </div>
 ${
   body === undefined
@@ -422,32 +425,80 @@ ${
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Security Assessment — ${escHtml(input.engagement)}</title>
 <style>
-  :root { --ink:#111; --muted:#666; --line:#ddd; --bg:#fff; }
+  :root { --ink:#111; --muted:#666; --line:#ddd; --bg:#fff; --box:#f8f8f8; }
   * { box-sizing: border-box; }
-  body { font: 14px/1.55 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); margin: 0; padding: 40px; max-width: 900px; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font: 14px/1.55 -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink); background: var(--bg);
+    width: 100%; max-width: 900px; margin: 0 auto;
+    padding: 40px 48px;              /* uniform left and right page margin */
+    overflow-wrap: break-word;
+  }
+  /* nothing may exceed the container */
+  h1, h2, h3, p, ul, ol, table, pre, article, section { max-width: 100%; }
   h1 { font-size: 26px; margin: 0 0 6px; }
-  h2 { font-size: 18px; margin: 0 0 10px; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
-  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 4px; }
+  h2 { font-size: 18px; margin: 28px 0 10px; border-bottom: 2px solid var(--line); padding-bottom: 6px; }
+  h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 4px; }
   .sub { color: var(--muted); margin-bottom: 24px; }
   .sub span { margin-right: 14px; white-space: nowrap; }
-  table { border-collapse: collapse; width: 100%; margin: 8px 0 20px; }
-  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; font-size: 13px; }
+  table { border-collapse: collapse; width: 100%; margin: 8px 0 20px; table-layout: fixed; }
+  th, td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; font-size: 13px; overflow-wrap: anywhere; word-break: break-word; }
   th { background: #f6f6f6; }
-  pre { background: #f8f8f8; border: 1px solid var(--line); border-radius: 4px; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
-  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; }
-  .finding { border: 1px solid var(--line); border-left-width: 5px; border-radius: 5px; padding: 16px 18px; margin: 0 0 22px; page-break-inside: avoid; }
+
+  /* ---- finding card: full width, never shifts, never splits ---- */
+  .finding {
+    width: 100%; max-width: 100%; box-sizing: border-box;
+    border: 1px solid var(--line); border-left-width: 5px; border-radius: 5px;
+    padding: 16px 18px; margin: 0 0 22px;
+    page-break-inside: avoid; break-inside: avoid;
+  }
+  .finding > * { min-width: 0; max-width: 100%; }
   .finding .num { color: var(--muted); font-weight: 400; }
-  .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 2px 18px; margin-bottom: 6px; }
-  .meta .k { display: inline-block; min-width: 110px; color: var(--muted); }
+
+  /* ---- metadata grid: stacked label over value, no horizontal overflow ---- */
+  .meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 8px 16px;
+    align-items: start;
+    width: 100%; max-width: 100%;
+    margin: 10px 0 6px;
+  }
+  .meta .cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .meta .k { color: var(--muted); font-size: 12px; }
+  .meta .v { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+
+  /* ---- content boxes ---- */
+  section { min-width: 0; page-break-inside: avoid; break-inside: avoid; }
+  pre {
+    width: 100%; max-width: 100%; box-sizing: border-box;
+    background: var(--box); border: 1px solid var(--line); border-radius: 4px;
+    padding: 10px; margin: 0 0 6px;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+    font-size: 12.5px; line-height: 1.5;
+    page-break-inside: avoid; break-inside: avoid;
+  }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.5px; overflow-wrap: anywhere; word-break: break-word; }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; color: #fff; }
-  .sev-critical { border-left-color: #b00020; } .sev-critical .badge { background: #b00020; }
-  .sev-high     { border-left-color: #d9480f; } .sev-high .badge     { background: #d9480f; }
-  .sev-medium   { border-left-color: #b8860b; } .sev-medium .badge   { background: #b8860b; }
-  .sev-low      { border-left-color: #2b6cb0; } .sev-low .badge      { background: #2b6cb0; }
-  .sev-info     { border-left-color: #666; }    .sev-info .badge     { background: #666; }
+  /* the badge carries the severity class itself, so these must be compound
+     selectors — a descendant selector only ever matched inside the finding
+     card and left the summary table's labels white-on-white */
+  .sev-critical { border-left-color: #b00020; } .badge.sev-critical { background: #b00020; }
+  .sev-high     { border-left-color: #d9480f; } .badge.sev-high     { background: #d9480f; }
+  .sev-medium   { border-left-color: #b8860b; } .badge.sev-medium   { background: #b8860b; }
+  .sev-low      { border-left-color: #2b6cb0; } .badge.sev-low      { background: #2b6cb0; }
+  .sev-info     { border-left-color: #666; }    .badge.sev-info     { background: #666; }
+  table.summary { max-width: 420px; }
+  table.summary th:last-child, table.summary td:last-child { width: 90px; }
   footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
-  .warn { border: 2px solid #b00020; background: #fff5f5; color: #7a0015; border-radius: 5px; padding: 12px 14px; margin: 0 0 20px; font-weight: 600; }
-  @media print { body { padding: 0; } .finding { page-break-inside: avoid; } }
+  .warn { border: 2px solid #b00020; background: #fff5f5; color: #7a0015; border-radius: 5px; padding: 12px 14px; margin: 0 0 20px; font-weight: 600; overflow-wrap: anywhere; }
+  @page { size: A4; margin: 14mm; }
+  @media print {
+    body { padding: 0; max-width: none; }
+    .finding, pre, section { page-break-inside: avoid; break-inside: avoid; }
+    .finding { border-left-width: 4px; }
+  }
 </style>
 </head>
 <body>
@@ -458,13 +509,14 @@ ${
   <span>Findings: ${input.findings.length}</span>
 </div>
 ${input.provenance ? `<p class="sub">Produced by: ${escHtml(input.provenance)}</p>` : ""}
+${input.selectionNote ? `<p class="sub">Coverage: ${escHtml(input.selectionNote)}</p>` : ""}
 ${input.unredacted ? `<div class="warn">${escHtml(UNREDACTED_WARNING)}</div>` : ""}
 
 <h2>Authorized scope</h2>
 <pre>${escHtml(input.scopeSummary)}</pre>
 
 <h2>Summary</h2>
-<table><thead><tr><th>Severity</th><th>Count</th></tr></thead><tbody>
+<table class="summary"><thead><tr><th>Severity</th><th>Count</th></tr></thead><tbody>
 ${(["critical", "high", "medium", "low", "info"] as Severity[])
   .map((s) => `<tr><td><span class="badge ${SEV_CLASS[s]}">${escHtml(SEV_LABEL[s])}</span></td><td>${counts[s]}</td></tr>`)
   .join("")}

@@ -7,8 +7,9 @@ import { tool } from "@opencode-ai/plugin"
 import { resolve } from "node:path"
 import { loadScope } from "../config.ts"
 import { resolveProjectRoot } from "../paths.ts"
-import { describeScope } from "../scope.ts"
+import { describeScope, authorize } from "../scope.ts"
 import { readAllFindings, severitySummary } from "../findings.ts"
+import { selectReportData, describeDrops, hostOf } from "../report-selection.ts"
 import { listEvidence, readEvidence } from "../evidence.ts"
 import { redactSecrets } from "../redact.ts"
 import { renderMarkdown, renderJson, writeReport, ALL_FORMATS, type ReportFormat, type ReportInput } from "../report.ts"
@@ -25,6 +26,9 @@ export const secReport = tool({
     "was run in unless out_dir says otherwise. HTML is self-contained; PDF needs a converter (weasyprint, chrome or chromium) " +
     "and is reported honestly when none is installed. " +
     "evidence=full embeds the full stored content of every artifact, not just the index. " +
+    "coverage controls which findings are included and defaults to 'session' — only what this scan session recorded. " +
+    "The store is engagement-wide, so 'engagement' would mix every earlier session and every other target into the " +
+    "report; use it deliberately, not by accident. Findings on a host outside the authorized scope are always excluded. " +
     "redact=false emits the deliverables verbatim, including any credentials the evidence holds — use it only when the " +
     "operator has asked for an unredacted report. Redaction can only remove secrets that are still present: an artifact " +
     "stored with sec_evidence include_secrets=false was already redacted at capture and cannot be recovered here. " +
@@ -38,6 +42,11 @@ export const secReport = tool({
       .describe(`output format(s): ${ALL_FORMATS.join("|")}|all (default all)`),
     name: tool.schema.string().optional().describe("base filename for the export (sanitized)"),
     out_dir: tool.schema.string().optional().describe("directory to write into; defaults to the project the agent was run in"),
+    coverage: tool.schema
+      .enum(["session", "engagement", "target"])
+      .optional()
+      .describe("session = only this scan session (default); engagement = every session in the store; target = only this target host"),
+    target: tool.schema.string().optional().describe("host to restrict to when coverage=target (host, host:port or URL)"),
     evidence: tool.schema
       .enum(["none", "index", "full"])
       .optional()
@@ -52,15 +61,35 @@ export const secReport = tool({
     const loaded = loadScope(c.worktree)
     const root = loaded.paths.root
 
-    let findings = readAllFindings(root)
+    const evidenceMode = args.evidence ?? "index"
+    const redact = args.redact !== false
+    const coverage = args.coverage ?? "session"
+
+    // Selection runs before anything is rendered. The store is engagement-wide,
+    // so an unfiltered read would mix other sessions and other targets into
+    // this report.
+    const selection = selectReportData(readAllFindings(root), listEvidence(root), {
+      sessionID: coverage === "session" ? c.sessionID : undefined,
+      host: coverage === "target" && args.target ? hostOf(args.target) ?? undefined : undefined,
+      isAuthorized: (host) => authorize(loaded.scope, { host }, "passive", { skipPrivateCheck: true }).allowed,
+    })
+
+    let findings = selection.findings
     if (args.min_severity) {
       const order = { info: 0, low: 1, medium: 2, high: 3, critical: 4 }
       findings = findings.filter((f) => order[f.severity] >= order[args.min_severity as keyof typeof order])
     }
-    const evidenceMode = args.evidence ?? "index"
-    const evidence = evidenceMode === "none" ? [] : listEvidence(root)
-    const redact = args.redact !== false
+    const evidence = evidenceMode === "none" ? [] : selection.evidence
     const counts = severitySummary(findings)
+
+    const dropped = describeDrops(selection.drops, selection.foreignHosts)
+    const covered =
+      coverage === "session"
+        ? `this scan session (${c.sessionID})`
+        : coverage === "target"
+          ? `target ${args.target ?? "(unset)"}`
+          : "every session in the engagement store"
+    const selectionNote = [covered, dropped].filter(Boolean).join(" — ")
 
     const evidenceContent: Record<string, string> | undefined =
       evidenceMode === "full"
@@ -80,6 +109,7 @@ export const secReport = tool({
       evidence,
       evidenceContent,
       unredacted: !redact,
+      selectionNote,
       limitations: args.limitations,
       provenance: args.provenance ?? `agent=${c.agent} via NullByte security capability layer`,
     }
@@ -100,7 +130,7 @@ export const secReport = tool({
       tool: "sec_report",
       decision: "allow",
       code: redact ? "report.export" : "report.export.unredacted",
-      reason: `exported ${findings.length} findings as ${formats.join("+")}; evidence=${evidenceMode}; redact=${redact}`,
+      reason: `exported ${findings.length} findings as ${formats.join("+")}; coverage=${coverage}; evidence=${evidenceMode}; redact=${redact}`,
       args: outDir,
     })
 
@@ -114,9 +144,18 @@ export const secReport = tool({
       if (res.pdf.hint) lines.push(`       ${res.pdf.hint}`)
     }
     lines.push(
+      `  coverage: ${covered}`,
       `  findings: ${findings.length} (critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}, info ${counts.info})`,
       `  evidence artifacts: ${evidence.length}${evidenceMode === "full" ? " (content embedded)" : ""}`,
     )
+    if (dropped) lines.push(`  ${dropped}`)
+    if (coverage === "session" && findings.length === 0 && selection.drops.otherSession > 0) {
+      lines.push(
+        `  note: this session recorded no findings, but ${selection.drops.otherSession} exist from other sessions — ` +
+          `pass coverage=engagement if the report is meant to cover the whole engagement`,
+      )
+    }
+    if (coverage === "target" && !args.target) lines.push("  WARNING: coverage=target was requested without a target; no host filter was applied")
     if (!redact) lines.push("  UNREDACTED — these files contain live secrets; restrict distribution and rotate what they disclose")
     const alreadyRedacted = evidence.filter((e) => e.redacted).length
     if (evidenceMode === "full" && alreadyRedacted) {
