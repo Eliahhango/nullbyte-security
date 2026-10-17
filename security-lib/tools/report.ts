@@ -10,17 +10,29 @@ import { describeScope, authorize } from "../scope.ts"
 import { readAllFindings, severitySummary } from "../findings.ts"
 import { selectReportData, describeDrops, hostOf, sessionHosts } from "../report-selection.ts"
 import { listEvidence, readEvidence } from "../evidence.ts"
-import { scrubReport, renderMarkdown, renderJson, writeReport, ALL_FORMATS, type ReportFormat, type ReportInput } from "../report.ts"
+import {
+  scrubReport,
+  renderMarkdown,
+  renderJson,
+  writeReport,
+  ALL_FORMATS,
+  INTEROP_FORMATS,
+  KNOWN_FORMATS,
+  type ReportFormat,
+  type ReportInput,
+} from "../report.ts"
 import { readAudit, writeAudit } from "../audit.ts"
 import { projectRootFor, targetPathsFor, type ToolCtxLike } from "./shared.ts"
 
-const FORMATS = [...ALL_FORMATS, "all"] as const
+const FORMATS = [...KNOWN_FORMATS, "all", "interop"] as const
 
 export const secReport = tool({
   description:
     "Generate the security assessment report from the findings and evidence already recorded. " +
     "action=preview returns the markdown without writing anything; action=export writes the report to disk. " +
-    `format selects the output: ${ALL_FORMATS.join(", ")}, or 'all' (default). Reports are filed under the target's own ` +
+    `format selects the output: ${ALL_FORMATS.join(", ")} for a reader, or ${INTEROP_FORMATS.join("/")} — or 'interop' for ` +
+    "both — which are machine-consumable: SARIF 2.1.0 and DefectDojo-shaped CSV. 'all' (the default) means the four reader " +
+    "formats. Reports are filed under the target's own " +
     "directory in the project the agent was run in (one directory per target, created on first contact) unless out_dir " +
     "says otherwise; a report spanning several hosts goes to a shared reports/ directory instead. HTML is self-contained; " +
     "PDF needs a converter (weasyprint, chrome or chromium) " +
@@ -44,7 +56,7 @@ export const secReport = tool({
     format: tool.schema
       .enum(FORMATS as unknown as [string, ...string[]])
       .optional()
-      .describe(`output format(s): ${ALL_FORMATS.join("|")}|all (default all)`),
+      .describe(`output format: ${KNOWN_FORMATS.join("|")}|interop|all (default all reader formats)`),
     name: tool.schema.string().optional().describe("base filename for the export (sanitized)"),
     out_dir: tool.schema.string().optional().describe("directory to write into; defaults to the target's own reports/ directory in the project the agent was run in"),
     coverage: tool.schema
@@ -137,7 +149,12 @@ export const secReport = tool({
       return redact ? scrubReport(input, md) : md
     }
 
-    const formats: ReportFormat[] = !args.format || args.format === "all" ? [...ALL_FORMATS] : [args.format as ReportFormat]
+    const formats: ReportFormat[] =
+      !args.format || args.format === "all"
+        ? [...ALL_FORMATS]
+        : args.format === "interop"
+          ? [...INTEROP_FORMATS]
+          : [args.format as ReportFormat]
 
     // Default destination: the target's own directory, so a report about one
     // host lands beside that host's logs. A report spanning several hosts cannot

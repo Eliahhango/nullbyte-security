@@ -11,7 +11,7 @@ and reporting — as a **plugin**, without touching the host CLI.
 - 25-fragment methodology knowledge base
 - Standards-shaped reports: executive summary, timeline, credentials, remediation
   roadmap, risk-rating and revision-history appendices
-- 256 unit tests
+- 274 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -124,7 +124,7 @@ directory you ran nullbyte from:
 | `sec_evidence` | store/retrieve raw artifacts, SHA-256 indexed and re-checked on read (`action=verify` audits the whole store); stored verbatim by default, `include_secrets=false` redacts at capture |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
 | `sec_retest` | re-check a finding's reproduction: `action=run` re-executes a command under the same scope/destructive guards and captures the output, `action=record` logs a manual re-check; append-only history, and a retest that contradicts the closure reopens the finding |
-| `sec_report` | preview or export as markdown, JSON, HTML or PDF into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
+| `sec_report` | preview or export as markdown, JSON, HTML or PDF (plus opt-in SARIF/CSV for tooling) into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made; `action=verify` recomputes the trail's hash chain to prove it was not edited |
 
@@ -179,6 +179,26 @@ Every export is stamped with the copyright mark
   tools only. Provider, model and harness identifiers are stripped at render
   time, in every format, so a deliverable cannot disclose the stack that
   produced it.
+
+### Interop exports
+
+Two formats are for other tools rather than a reader, and are requested
+explicitly (`format=sarif`, `format=csv`, or `format=interop` for both) so a
+normal export does not litter the engagement directory with them:
+
+- **SARIF 2.1.0** for code-scanning and security dashboards. Critical and high
+  map to `error`, medium to `warning`, low to `note`, and info to `none` — so an
+  informational note cannot fail a build. A network finding gets a SARIF
+  *logical* location naming the asset; a `file:line` evidence reference becomes a
+  real physical location. Findings with the same CWE share one rule.
+- **CSV** in DefectDojo's Generic Findings Import shape. `Active`, `Verified`,
+  `FalsePositive` and `Remediated` are written as independent columns rather than
+  derived from one another, because "fixed" and "not proven" are different
+  things. Quoting follows RFC 4180, so a title with a comma, quote or newline
+  round-trips.
+
+Both are derived from the same findings as every other format, and both honour
+`redact=true`.
 
 ## Scope enforcement
 

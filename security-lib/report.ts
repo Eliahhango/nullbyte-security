@@ -7,9 +7,11 @@
  * evidence references, and explicit limitations / untested areas.
  */
 
-import { chmodSync, writeFileSync } from "node:fs"
+import { chmodSync } from "node:fs"
 import { join } from "node:path"
 import { ensureDir } from "./paths.ts"
+import { atomicWriteFile } from "./atomic.ts"
+import { renderCsv, renderSarif } from "./interop.ts"
 import { htmlToPdf, COPYRIGHT_TEXT } from "./pdf.ts"
 import { closureSummary, severitySummary } from "./findings.ts"
 import { redactSecrets } from "./redact.ts"
@@ -1102,9 +1104,20 @@ ${appendixHtml}
 
 /* --------------------------------------------------------------- writing --- */
 
-export type ReportFormat = "md" | "json" | "html" | "pdf"
+/**
+ * Human/machine split. `ALL_FORMATS` is what "export the report" means: the
+ * deliverables an assessor hands over. `INTEROP_FORMATS` are for tooling and are
+ * opt-in — emitting a SARIF file next to every report would just be noise in the
+ * engagement directory, and SARIF has no PDF to pair with it.
+ */
+export type ReportFormat = "md" | "json" | "html" | "pdf" | "sarif" | "csv"
 
 export const ALL_FORMATS: ReportFormat[] = ["md", "json", "html", "pdf"]
+
+/** Formats consumed by other tools rather than by a reader. Request them explicitly. */
+export const INTEROP_FORMATS: ReportFormat[] = ["sarif", "csv"]
+
+export const KNOWN_FORMATS: ReportFormat[] = [...ALL_FORMATS, ...INTEROP_FORMATS]
 
 export interface WriteReportOptions {
   /** base filename, without extension */
@@ -1135,6 +1148,10 @@ export interface WriteReportResult {
   html: string
   markdownPath?: string
   jsonPath?: string
+  /** present when the sarif interop format was requested */
+  sarifPath?: string
+  /** present when the csv interop format was requested */
+  csvPath?: string
 }
 
 /**
@@ -1168,19 +1185,25 @@ export function writeReport(root: string, input: ReportInput, opts: WriteReportO
   const markdown = clean(renderMarkdown(input))
   const html = clean(renderHtml(input))
   const json = clean(renderJson(input))
+  const sarif = clean(renderSarif(input))
+  const csv = clean(renderCsv(input))
   const files: WrittenFile[] = []
   const out: WriteReportResult = { dir, files, markdown, html }
 
   const emit = (format: ReportFormat, ext: string, body: string) => {
     if (!formats.includes(format)) return
     const path = join(dir, `${base}.${ext}`)
-    writeFileSync(path, body, { mode: 0o600 })
+    // atomic for the same reason the store is: a half-written deliverable that
+    // looks complete is worse than no deliverable
+    atomicWriteFile(path, body)
     files.push({ format, path })
   }
 
   emit("md", "md", markdown)
   emit("json", "json", json)
   emit("html", "html", html)
+  emit("sarif", "sarif", sarif)
+  emit("csv", "csv", csv)
 
   if (formats.includes("pdf")) {
     const pdfPath = join(dir, `${base}.pdf`)
@@ -1200,6 +1223,8 @@ export function writeReport(root: string, input: ReportInput, opts: WriteReportO
 
   out.markdownPath = files.find((f) => f.format === "md")?.path
   out.jsonPath = files.find((f) => f.format === "json")?.path
+  out.sarifPath = files.find((f) => f.format === "sarif")?.path
+  out.csvPath = files.find((f) => f.format === "csv")?.path
   return out
 }
 
