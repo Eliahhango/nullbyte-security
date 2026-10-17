@@ -125,7 +125,7 @@ directory you ran nullbyte from:
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
 | `sec_report` | preview or export as markdown, JSON, HTML or PDF into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
 | `sec_methodology` | search/load shared knowledge fragments |
-| `sec_audit` | review every allow/deny/ask decision the tool layer made |
+| `sec_audit` | review every allow/deny/ask decision the tool layer made; `action=verify` recomputes the trail's hash chain to prove it was not edited |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is.
 
@@ -232,7 +232,11 @@ agent cannot widen it unless that is explicitly permitted, via
 Authorization is applied in four independent layers — permission rules, the tool
 boundary, the tool bodies, and an advisory system prompt. Every `allow`, `deny`
 and `ask` decision is appended to the project's audit trail and can be reviewed
-with `sec_audit`. The full breakdown is in
+with `sec_audit`. The trail is hash-chained: each record carries its position,
+the hash of the record before it and its own hash, so editing, dropping or
+reordering a line is detectable with `sec_audit action=verify` instead of
+trusted. Records written before chaining was added are reported as unverifiable
+rather than assumed good. The full breakdown is in
 [docs/PENTEST.md](docs/PENTEST.md#4-enforcement).
 
 ## Lab
@@ -254,6 +258,14 @@ bind it to a public interface.
   sensitive. `redact=true` removes the shapes it knows; it cannot remove a secret
   it does not recognise, and it cannot undo capture-time redaction.
 - CVSS is base score only (no temporal/environmental).
+- **A failed audit write refuses the action.** The trail is a control, not a
+  log, so if it cannot be written the tool call stops with `AuditWriteError`
+  rather than proceeding unlogged. On a read-only or full filesystem this stops
+  security tools until the store is writable again — that is deliberate.
+- The audit chain proves internal consistency, not authorship: it detects edits
+  to an existing trail, but someone with write access to the store can rebuild a
+  whole chain from scratch. Sealing the head hash outside the store (a signed
+  copy, a commit, a ticket) is what defeats that.
 
 ## Docs
 

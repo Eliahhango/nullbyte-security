@@ -90,6 +90,12 @@ export interface AuditRecord {
   /** redacted, truncated representation of the arguments */
   args?: string
   targets?: string[]
+  /** 1-based position in the tamper-evident chain */
+  seq?: number
+  /** hash of the preceding record, or the genesis hash for the first */
+  prev?: string
+  /** sha256 over this record with `hash` omitted; see audit.ts */
+  hash?: string
 }
 
 export interface CvssBreakdown {
