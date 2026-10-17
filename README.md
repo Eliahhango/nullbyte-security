@@ -11,7 +11,7 @@ and reporting — as a **plugin**, without touching the host CLI.
 - 25-fragment methodology knowledge base
 - Standards-shaped reports: executive summary, timeline, credentials, remediation
   roadmap, risk-rating and revision-history appendices
-- 249 unit tests
+- 256 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -117,7 +117,7 @@ directory you ran nullbyte from:
 | Tool | Purpose |
 |---|---|
 | `sec_scope` | authorization mode; `check` a target; `init` writes a starter scope |
-| `sec_recon` | `dns\|http\|tls\|headers\|fingerprint` — real network calls |
+| `sec_recon` | `dns\|http\|tls\|headers\|fingerprint` — real network calls; the raw HTTP response is archived as an evidence artifact and its id returned (`archive=false` opts out) |
 | `sec_ports` | bounded TCP connect scan + banner grab |
 | `sec_scan` | adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap; `logs=true` keeps the raw stdout/stderr in the target's `logs/` |
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |

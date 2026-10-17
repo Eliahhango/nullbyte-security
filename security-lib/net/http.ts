@@ -33,6 +33,15 @@ export interface HttpProbeResult {
   /** set when a hop was refused by policy */
   stopped?: { at: string; reason: string }
   errors: string[]
+  /**
+   * Reconstructed HTTP transcript for every hop, status line through body.
+   *
+   * Reconstructed, not the literal wire bytes: header order and duplicates come
+   * from `rawHeaders`, which is faithful, but a chunked or gzip body is decoded
+   * by Node before we see it. Used to archive a response as evidence, and
+   * labelled as a reconstruction wherever it is stored.
+   */
+  transcript?: string
 }
 
 export interface HttpProbeOptions {
@@ -56,6 +65,7 @@ interface RawResponse {
   headers: Record<string, string>
   body: string
   bytes: number
+  transcript: string
 }
 
 function requestOnce(urlStr: string, opts: HttpProbeOptions): Promise<RawResponse> {
@@ -93,9 +103,20 @@ function requestOnce(urlStr: string, opts: HttpProbeOptions): Promise<RawRespons
           bytes += chunk.length
           if (allowBody && bytes <= maxBodyBytes) body += chunk.toString("utf8")
         })
-        res.on("end", () =>
-          resolve({ status: res.statusCode ?? 0, statusText: res.statusMessage ?? "", headers, body, bytes }),
-        )
+        res.on("end", () => {
+          const status = res.statusCode ?? 0
+          const statusText = res.statusMessage ?? ""
+          // rawHeaders preserves wire order and duplicate headers, which the
+          // joined `headers` object destroys — worth keeping for a transcript
+          const pairs: string[] = []
+          const raw = res.rawHeaders ?? []
+          for (let i = 0; i < raw.length; i += 2) pairs.push(`${raw[i]}: ${raw[i + 1]}`)
+          const truncated = bytes > body.length
+          const transcript =
+            `HTTP/1.1 ${status} ${statusText}\r\n${pairs.join("\r\n")}\r\n\r\n${body}` +
+            (truncated ? `\n\n... [body truncated: ${body.length} of ${bytes} bytes retained] ...\n` : "")
+          resolve({ status, statusText, headers, body, bytes, transcript })
+        })
         res.on("error", reject)
       },
     )
@@ -119,6 +140,7 @@ export async function httpProbe(url: string, opts: HttpProbeOptions = {}): Promi
   const errors: string[] = []
   let current = url
   let last: RawResponse | null = null
+  const transcripts: string[] = []
 
   for (let i = 0; i <= maxRedirects; i++) {
     const check = opts.validate?.(current)
@@ -134,6 +156,7 @@ export async function httpProbe(url: string, opts: HttpProbeOptions = {}): Promi
         durationMs: Date.now() - started,
         stopped: { at: current, reason: check.reason },
         errors,
+        transcript: transcripts.length ? transcripts.join("\n\n") : undefined,
       }
     }
 
@@ -152,9 +175,11 @@ export async function httpProbe(url: string, opts: HttpProbeOptions = {}): Promi
         bodyBytes: 0,
         durationMs: Date.now() - started,
         errors,
+        transcript: transcripts.length ? transcripts.join("\n\n") : undefined,
       }
     }
     last = res
+    transcripts.push(res.transcript)
 
     const location = res.headers.location
     hops.push({ url: current, status: res.status, location })
@@ -189,5 +214,6 @@ export async function httpProbe(url: string, opts: HttpProbeOptions = {}): Promi
     bodyBytes: final?.bytes ?? 0,
     durationMs: Date.now() - started,
     errors,
+    transcript: transcripts.length ? transcripts.join("\n\n") : undefined,
   }
 }

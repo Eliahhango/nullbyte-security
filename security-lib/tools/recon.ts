@@ -12,6 +12,7 @@ import { tlsInspect } from "../net/tls.ts"
 import { analyzeSecurityHeaders } from "../net/headers.ts"
 import { fingerprint } from "../net/fingerprint.ts"
 import { authorize } from "../scope.ts"
+import { saveEvidence } from "../evidence.ts"
 import { loadScope } from "../config.ts"
 import { enforce, splitTarget, type ToolCtxLike } from "./shared.ts"
 
@@ -67,18 +68,24 @@ export const secRecon = tool({
     "tls (protocol, cipher, certificate subject/issuer/validity/SAN, self-signed and expiry), " +
     "headers (security-header grading + cookie flags), fingerprint (technology detection with cited evidence), " +
     "or all. Passive: sends normal GET/HEAD requests and never mutates target state. " +
-    "Out-of-scope targets are refused by the tool layer.",
+    "Out-of-scope targets are refused by the tool layer. The raw HTTP response is archived as an evidence artifact by " +
+    "default and its id is returned, so a finding about a response can cite the response itself; pass archive=false to skip it.",
   args: {
     target: tool.schema.string().describe("authorized host, IP or URL (e.g. https://lab.local:8443)"),
     check: tool.schema.enum(CHECKS).describe("which reconnaissance to run"),
     port: tool.schema.number().optional().describe("override port for http/tls checks"),
     timeout_ms: tool.schema.number().optional().describe("per-request timeout in ms (default 10000)"),
     insecure: tool.schema.boolean().optional().describe("accept untrusted TLS certificates (authorized labs only)"),
+    archive: tool.schema
+      .boolean()
+      .optional()
+      .describe("save the raw HTTP response as an evidence artifact and return its id (default true for http checks); pass false for a probe you do not want in the store"),
   },
   async execute(args, ctx: any) {
     const c = ctx as ToolCtxLike
     const target = splitTarget(args.target)
     const timeoutMs = Math.max(1000, Math.min(args.timeout_ms ?? 10000, 60000))
+    const root = loadScope(c.worktree).paths.root
 
     await enforce({ ctx: c, tool: "sec_recon", target, intensity: "passive", purpose: `${args.check} reconnaissance` })
 
@@ -106,6 +113,27 @@ export const secRecon = tool({
 
     if (wantHttp) {
       const res = await httpProbe(url, { timeoutMs, insecure: args.insecure, validate: validateHop, allowBody: true })
+
+      // Archive before reporting, so the artifact exists by the time the caller
+      // cites it. A claim about a response is checkable only if the response was
+      // kept: the summary below is already a lossy view of it.
+      let archiveLine = ""
+      if (res.transcript && args.archive !== false) {
+        const saved = saveEvidence(root, {
+          sessionID: c.sessionID,
+          source: "sec_recon",
+          label: `${args.check} ${res.finalUrl}`,
+          content:
+            `# sec_recon ${args.check} — ${res.requestedUrl}\n` +
+            `# reconstructed transcript (headers preserved verbatim; body as decoded by the client)\n\n` +
+            res.transcript,
+          target: `${target.host}${port ? `:${port}` : ""}`,
+        })
+        archiveLine = saved.record
+          ? `archived HTTP transcript: ${saved.record.id} (${saved.record.bytes} bytes, sha256 ${saved.record.sha256.slice(0, 16)}…)`
+          : `HTTP transcript not archived: ${saved.problems.join("; ")}`
+      }
+
       if (res.stopped) {
         out.push(`http: STOPPED at ${res.stopped.at} — ${res.stopped.reason}`)
       } else {
@@ -136,6 +164,7 @@ export const secRecon = tool({
           )
         }
       }
+      if (archiveLine) out.push(archiveLine)
     }
 
     if (wantTls) out.push(fmtTls(await tlsInspect(target.host, port, { timeoutMs, insecure: args.insecure })))
