@@ -153,12 +153,94 @@ export function listEvidence(root: string): EvidenceRecord[] {
   return readIndex(root)
 }
 
+/**
+ * Thrown when a stored artifact does not match the hash recorded for it.
+ *
+ * The hash is the only thing that distinguishes evidence from a file someone
+ * edited afterwards, so a mismatch is fatal rather than a warning: embedding it
+ * in a report would launder an altered artifact into a formal deliverable.
+ */
+export class EvidenceIntegrityError extends Error {
+  readonly id: string
+  readonly path: string
+  readonly expected: string
+  readonly actual: string
+
+  constructor(id: string, path: string, expected: string, actual: string) {
+    super(
+      `evidence ${id} at ${path} does not match the SHA-256 recorded for it ` +
+        `(expected ${expected}, found ${actual}). The artifact has been modified or corrupted since ` +
+        `it was stored, so it cannot be relied on as evidence. Re-capture it, or remove it from the ` +
+        `findings that cite it.`,
+    )
+    this.name = "EvidenceIntegrityError"
+    this.id = id
+    this.path = path
+    this.expected = expected
+    this.actual = actual
+  }
+}
+
+export type EvidenceIntegrity = "ok" | "modified" | "missing" | "unhashed"
+
+export interface EvidenceVerification {
+  id: string
+  label: string
+  target?: string
+  /** ok | modified | missing | unhashed — see verifyEvidenceStore */
+  state: EvidenceIntegrity
+  expected?: string
+  actual?: string
+}
+
+/** Re-hash one stored artifact and compare it against the recorded digest. */
+export function verifyEvidence(root: string, id: string): EvidenceVerification {
+  const rec = readIndex(root).find((r) => r.id === id)
+  if (!rec) return { id, label: id, state: "missing" }
+
+  const p = join(root, "evidence", rec.file)
+  if (!existsSync(p)) return { id, label: rec.label, target: rec.target, state: "missing", expected: rec.sha256 }
+
+  const actual = createHash("sha256").update(readFileSync(p)).digest("hex")
+  if (!rec.sha256) return { id, label: rec.label, target: rec.target, state: "unhashed", actual }
+  return {
+    id,
+    label: rec.label,
+    target: rec.target,
+    state: actual === rec.sha256 ? "ok" : "modified",
+    expected: rec.sha256,
+    actual,
+  }
+}
+
+/**
+ * Verify every artifact in the store. Cheap enough to run on demand: the store
+ * is bounded by the evidence limit, and this is the check that decides whether
+ * the evidence base can be trusted at all.
+ */
+export function verifyEvidenceStore(root: string): EvidenceVerification[] {
+  return readIndex(root).map((r) => verifyEvidence(root, r.id))
+}
+
+/** True when every artifact verifies. */
+export function storeIntegrityOk(root: string): boolean {
+  return verifyEvidenceStore(root).every((v) => v.state === "ok")
+}
+
 export function readEvidence(root: string, id: string): string | undefined {
   const rec = readIndex(root).find((r) => r.id === id)
   if (!rec) return undefined
   const p = join(root, "evidence", rec.file)
   if (!existsSync(p)) return undefined
-  return readFileSync(p, "utf8")
+
+  const content = readFileSync(p)
+  // verify BEFORE returning: an artifact that fails its hash must never reach a
+  // report, or the deliverable launders an altered file as evidence
+  if (rec.sha256) {
+    const actual = createHash("sha256").update(content).digest("hex")
+    if (actual !== rec.sha256) throw new EvidenceIntegrityError(id, p, rec.sha256, actual)
+  }
+  return content.toString("utf8")
 }
 
 /** Resolve a set of evidence ids, reporting any that are missing. */

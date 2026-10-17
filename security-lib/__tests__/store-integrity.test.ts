@@ -14,11 +14,11 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { createFinding, readAllFindings, StoreCorruptError } from "../findings.ts"
-import { listEvidence, readEvidence, saveEvidence, EvidenceIndexCorruptError } from "../evidence.ts"
+import { listEvidence, readEvidence, saveEvidence, verifyEvidence, verifyEvidenceStore, EvidenceIndexCorruptError, EvidenceIntegrityError } from "../evidence.ts"
 import { atomicWriteFile, atomicWriteJson } from "../atomic.ts"
 import type { FindingInput } from "../types.ts"
 
@@ -124,6 +124,63 @@ test("evidence hashes cover exactly the bytes on disk, including truncation", ()
   const onDisk = readFileSync(join(dir, "evidence", record!.file), "utf8")
   const digest = createHash("sha256").update(onDisk).digest("hex")
   assert.equal(record!.sha256, digest, "the recorded hash must verify against the stored file")
+})
+
+/* -------------------------------------------------- evidence integrity --- */
+
+test("a tampered artifact fails its hash and is refused", () => {
+  const dir = root()
+  const { record } = saveEvidence(dir, { sessionID: "s1", source: "sec_recon", label: "headers", content: "HTTP/1.1 200 OK" })
+  assert.equal(readEvidence(dir, record!.id), "HTTP/1.1 200 OK")
+
+  writeFileSync(join(dir, "evidence", record!.file), "HTTP/1.1 200 OK\nX-Injected: yes")
+
+  assert.throws(() => readEvidence(dir, record!.id), (e: any) => e instanceof EvidenceIntegrityError)
+  try {
+    readEvidence(dir, record!.id)
+  } catch (e: any) {
+    assert.equal(e.id, record!.id)
+    assert.equal(e.expected, record!.sha256)
+    assert.notEqual(e.actual, record!.sha256)
+    assert.match(e.message, /cannot be relied on as evidence/)
+  }
+})
+
+test("verifyEvidenceStore reports each artifact's state", () => {
+  const dir = root()
+  const a = saveEvidence(dir, { sessionID: "s1", source: "sec_recon", label: "a", content: "alpha" }).record!
+  const b = saveEvidence(dir, { sessionID: "s1", source: "sec_scan", label: "b", content: "bravo" }).record!
+  assert.deepEqual(verifyEvidenceStore(dir).map((v) => v.state), ["ok", "ok"])
+
+  writeFileSync(join(dir, "evidence", b.file), "bravo, edited")
+  assert.deepEqual(verifyEvidenceStore(dir).map((v) => v.state), ["ok", "modified"])
+  assert.equal(verifyEvidence(dir, a.id).state, "ok")
+
+  rmSync(join(dir, "evidence", a.file))
+  assert.equal(verifyEvidence(dir, a.id).state, "missing")
+  assert.equal(verifyEvidence(dir, "E-nope").state, "missing")
+})
+
+test("a truncated artifact still verifies — the hash covers what was written", () => {
+  const dir = root()
+  const { record } = saveEvidence(dir, {
+    sessionID: "s1",
+    source: "sec_scan",
+    label: "big",
+    content: "A".repeat(300 * 1024),
+  })
+  assert.equal(record!.truncated, true)
+  assert.equal(verifyEvidence(dir, record!.id).state, "ok", "a truncated artifact is intact, not tampered")
+  assert.equal(readEvidence(dir, record!.id)?.startsWith("A".repeat(100)), true)
+})
+
+test("a report refuses to embed an altered artifact", () => {
+  const dir = root()
+  const { record } = saveEvidence(dir, { sessionID: "s1", source: "sec_recon", label: "transcript", content: "GET /admin 200" })
+  writeFileSync(join(dir, "evidence", record!.file), "GET /admin 403")
+
+  // this is the path sec_report takes for evidence=full
+  assert.throws(() => readEvidence(dir, record!.id), (e: any) => e instanceof EvidenceIntegrityError)
 })
 
 /* ----------------------------------------------------------- atomic I/O --- */

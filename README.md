@@ -121,7 +121,7 @@ directory you ran nullbyte from:
 | `sec_ports` | bounded TCP connect scan + banner grab |
 | `sec_scan` | adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap; `logs=true` keeps the raw stdout/stderr in the target's `logs/` |
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
-| `sec_evidence` | store/retrieve raw artifacts, SHA-256 indexed; stored verbatim by default, `include_secrets=false` redacts at capture |
+| `sec_evidence` | store/retrieve raw artifacts, SHA-256 indexed and re-checked on read (`action=verify` audits the whole store); stored verbatim by default, `include_secrets=false` redacts at capture |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
 | `sec_report` | preview or export as markdown, JSON, HTML or PDF into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
 | `sec_methodology` | search/load shared knowledge fragments |
@@ -142,6 +142,11 @@ type, host, the line it came from and where it was observed. Nothing is masked.
   you pass `redact=true`.
 - **`redact=true`** replaces each collected value with `[REDACTED:credential]`,
   and the shape rules scrub anything else that looks like a secret.
+- **Evidence is verified before it is trusted.** Every artifact carries a
+  SHA-256 of exactly the bytes written. `action=get` and `evidence=full`
+  re-hash before returning, and refuse an artifact that no longer matches, so an
+  edited or corrupted file cannot be laundered into a deliverable as evidence.
+  `action=verify` audits the whole store.
 
 This is a deliberate departure from the usual guidance. PTES Post-Exploitation
 says passwords "will not be included in the final report"; OWASP APTS

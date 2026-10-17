@@ -6,7 +6,7 @@
  */
 
 import { tool } from "@opencode-ai/plugin"
-import { listEvidence, readEvidence, resolveEvidence, saveEvidence } from "../evidence.ts"
+import { listEvidence, readEvidence, resolveEvidence, saveEvidence, verifyEvidence, verifyEvidenceStore } from "../evidence.ts"
 import { loadScope } from "../config.ts"
 import type { ToolCtxLike } from "./shared.ts"
 
@@ -14,12 +14,14 @@ export const secEvidence = tool({
   description:
     "Store or retrieve raw evidence supporting a finding. action=save persists output (HTTP transcripts, scanner output, " +
     "banners) and returns an id to reference from sec_finding; the raw value is written to disk verbatim by default and a " +
-    "SHA-256 is recorded. action=list shows stored artifacts; action=get returns one. Prefer storing the minimal artifact " +
+    "SHA-256 is recorded. action=list shows stored artifacts; action=get returns one, and refuses if the artifact no longer " +
+    "matches its recorded hash. action=verify re-hashes every artifact so tampering or corruption is detected rather than " +
+    "silently reported as evidence. Prefer storing the minimal artifact " +
     "that demonstrates the issue. The operator's posture is full disclosure, so leaked credentials are kept in the clear and " +
     "appear in the report via sec_report evidence=full. Pass include_secrets=false to redact at capture instead — this is " +
     "irreversible: it cannot be undone by regenerating the report.",
   args: {
-    action: tool.schema.enum(["save", "list", "get"]).describe("operation"),
+    action: tool.schema.enum(["save", "list", "get", "verify"]).describe("operation"),
     label: tool.schema.string().optional().describe("short description of what this evidence shows (save)"),
     content: tool.schema.string().optional().describe("raw artifact content (save)"),
     target: tool.schema.string().optional().describe("asset this evidence relates to (save)"),
@@ -52,6 +54,23 @@ export const secEvidence = tool({
       const rows = listEvidence(root)
       if (!rows.length) return "no evidence stored yet"
       return rows.map((r) => `${r.id} [${r.source}] ${r.label} — ${r.target ?? "n/a"}, ${r.bytes} bytes, ${r.redacted ? "redacted" : "verbatim"}`).join("\n")
+    }
+
+    if (args.action === "verify") {
+      const results = verifyEvidenceStore(root)
+      if (!results.length) return "no evidence stored yet"
+      const bad = results.filter((r) => r.state !== "ok")
+      const head = `${results.length} artifact(s) checked: ${results.length - bad.length} verified${bad.length ? `, ${bad.length} FAILED` : ""}`
+      if (!bad.length) return `${head}.\nEvery artifact matches the SHA-256 recorded when it was stored.`
+      return [
+        head + ".",
+        ...bad.map((r) => {
+          if (r.state === "missing") return `  ${r.id} MISSING — ${r.label} (indexed, but the file is gone)`
+          if (r.state === "unhashed") return `  ${r.id} UNHASHED — ${r.label} (stored without a digest; cannot be verified)`
+          return `  ${r.id} MODIFIED — ${r.label}\n    expected ${r.expected}\n    found    ${r.actual}`
+        }),
+        "An artifact that does not match its hash cannot be relied on as evidence. Re-capture it, and correct or close any finding that cites it.",
+      ].join("\n")
     }
 
     if (!args.id) return "error: action=get requires id"
