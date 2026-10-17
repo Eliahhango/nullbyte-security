@@ -1,19 +1,18 @@
 # nullbyte-security
 
-Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI,
-a terminal agent. Adds an agentic pentesting toolset — scope
-enforcement, recon, port scanning, scanner orchestration, secret scanning,
-evidence handling, CVSS-scored findings and reporting — as a **plugin**, without
-touching the host CLI.
+Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI.
+Adds an agentic pentesting toolset — scope enforcement, recon, port scanning,
+scanner orchestration, secret scanning, evidence handling, CVSS-scored findings
+and reporting — as a **plugin**, without touching the host CLI.
 
 - 10 `sec_*` tools available to every agent
 - Authorized by default, with opt-in perimeter lockdown for real engagements
 - Findings, evidence, audit trail and reports persisted per project
-- 25-fragment methodology knowledge base covering the common vulnerability classes
-- 124 unit tests
+- 25-fragment methodology knowledge base
+- 154 unit tests
 
-> Built for authorized security testing. Point it at systems you own or have
-> written permission to test.
+> Authorized testing only. Point it at systems you own or have written permission
+> to test.
 
 ## Install
 
@@ -22,8 +21,61 @@ git clone https://github.com/Eliahhango/nullbyte-security.git ~/nullbyte-securit
 cd ~/nullbyte-security && ./install.sh
 ```
 
-Symlinks the plugin into `~/.config/nullbyte/`, so `git pull` updates the live
-install. Verify with `npm test`.
+`install.sh` symlinks the plugin into `~/.config/nullbyte/`, so `git pull` updates
+the live install. Verify with `npm test`.
+
+Config is read once at startup and is **not** hot-reloaded — restart nullbyte
+after changing a plugin, agent or config file.
+
+## Usage
+
+Run nullbyte from the directory of the project you are assessing. All engagement
+state lives in `<project>/.nullbyte/security/`, next to the code it concerns.
+
+```bash
+nullbyte                          # TUI, default agent
+nullbyte run "recon app.acme.test and record what you find"
+nullbyte run --continue           # resume the last session
+nullbyte run -s <sessionID>       # resume a specific session
+nullbyte run --agent plan "plan an assessment of app.acme.test"
+nullbyte run --agent build "write a fuzzer for the login endpoint"
+```
+
+Talk to it in plain language — the agent selects the tools. Naming a tool
+directly also works:
+
+```
+sec_scope  action=check target=app.acme.test
+sec_recon  check=http target=https://app.acme.test
+sec_ports  target=app.acme.test ports=80,443,8443
+sec_report action=export format=all
+```
+
+### Modes
+
+| Agent | Use |
+|---|---|
+| `void` (default) | full operator — plans and executes |
+| `plan` | read-only strategist; produces a plan and cannot write files |
+| `build` | executor; writes tooling and runs the operation |
+
+Switch inside the TUI, or per run with `--agent`. The modes live in
+`~/.config/nullbyte/agent/*.md` — edit those to change behaviour, then restart.
+
+### CLI commands
+
+| Command | Does |
+|---|---|
+| `nullbyte upgrade` | update the CLI. `--method curl\|npm\|pnpm\|bun\|brew\|choco\|scoop`, or pin a version: `nullbyte upgrade v1.2.3` |
+| `nullbyte run [message]` | one-shot run. `-c` continue last, `-s <id>` session, `-m provider/model`, `--agent`, `-f <file>`, `--format json` |
+| `nullbyte models [provider]` | list available models (`--refresh`, `--verbose`) |
+| `nullbyte providers login` | manage credentials — `list`, `login [url]`, `logout [provider]` |
+| `nullbyte agent list` | list agents. `agent create --description "..."` generates one |
+| `nullbyte session list` | list sessions; `session delete <sessionID>` |
+| `nullbyte plugin <module>` | install an npm plugin (`-g` global, `-f` force) |
+| `nullbyte export [sessionID]` | export a session as JSON (`--sanitize` redacts) |
+| `nullbyte stats` | token usage and cost |
+| `nullbyte uninstall` | remove nullbyte and its files |
 
 ## Tools
 
@@ -36,7 +88,7 @@ install. Verify with `npm test`.
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
 | `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed; `include_secrets=true` stores verbatim |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
-| `sec_report` | preview or export as markdown, JSON, HTML or PDF, written to the directory the agent was run in; `evidence=full` embeds artifact content, `redact=false` emits it verbatim |
+| `sec_report` | preview or export as markdown, JSON, HTML or PDF into the run directory; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content, `redact=false` emits it verbatim |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 
@@ -49,10 +101,8 @@ permitted at every intensity. Two guards stay on because they protect *your*
 machine, not the target — destructive commands (`rm -rf /`, `mkfs`, `dd` to a raw
 device) and local credential files. Both are switchable off in config.
 
-### Locking it down
-
-For a real engagement with a defined perimeter, create
-`.nullbyte/security/scope.json` in the project:
+For a real engagement with a defined perimeter, write
+`.nullbyte/security/scope.json`:
 
 ```json
 {
@@ -69,29 +119,14 @@ For a real engagement with a defined perimeter, create
 }
 ```
 
-Grammar: `host`, `*.domain` (subdomains only), `domain` (domain + subdomains),
-IP, CIDR, URL. `exclude` always wins. Scope is operator-authored — the agent
-cannot widen it unless you explicitly allow it.
+Grammar: `host`, `*.domain` (subdomains only), `domain` (domain + subdomains), IP,
+CIDR, URL. `exclude` always wins. Scope is operator-authored — the agent cannot
+widen it unless you explicitly allow it.
 
-## Enforcement
-
-Four layers, outermost first:
-
-1. **Permission rules** — destructive patterns deny always; intrusive scanners
-   prompt only when you opt in, since prompting by default would stall
-   non-interactive runs. Operator rules win.
-2. **Tool boundary** — aborts the call before the body runs. Enforces
-   destructive refusal, the credential guard, and target authorization for
-   `bash`/`webfetch` in allow-list mode.
-3. **Tool bodies** — per-call authorization, DNS re-validation, and an approval
-   hook for intrusive operations. Port scanners authorize the host **and every
-   individual port**: an entry allowing only `127.0.0.1:8080` refuses `8081`, and
-   refuses the whole call if a port list mixes authorized and unauthorized ports.
-4. **System prompt** — injects the shared workflow (advisory only).
-
-Every decision is appended to the project's audit log with redacted arguments.
-Engagement state lives with the project, so an assessment is reviewable and
-resumable next to the code it concerns.
+Enforcement runs in four layers — permission rules, the tool boundary, the tool
+bodies, and an advisory system prompt — with every decision appended to the
+project's audit log. The full breakdown is in
+[docs/PENTEST.md](docs/PENTEST.md#4-enforcement).
 
 ## Lab
 
@@ -104,9 +139,17 @@ bind it to a public interface.
 
 - Connect scans only (no raw SYN/OS detection) — use the nmap adapter for that.
 - Redirects on `webfetch` are validated by the tool, not the guard.
-- Evidence is redacted before storage, so a stored artifact is not byte-exact
-  when it contained secrets.
+- Evidence is redacted before storage, so a stored artifact is not byte-exact when
+  it contained secrets — unless it was captured with `include_secrets=true`.
+- Redaction is best-effort pattern matching, not a guarantee. A report exported
+  with `redact=false` is a credential dump by design; treat it as one.
 - CVSS is base score only (no temporal/environmental).
+
+## Docs
+
+- [docs/PENTEST.md](docs/PENTEST.md) — full reference: tools, closure discipline, enforcement, gotchas
+- [docs/HACKERAI_GAP_ANALYSIS.md](docs/HACKERAI_GAP_ANALYSIS.md) — capability comparison and non-adoptions
+- [docs/IMPLEMENTATION_ROADMAP.md](docs/IMPLEMENTATION_ROADMAP.md) — what is next
 
 ## License
 
