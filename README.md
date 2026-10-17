@@ -10,7 +10,7 @@ touching the host CLI.
 - Authorized by default, with opt-in perimeter lockdown for real engagements
 - Findings, evidence, audit trail and reports persisted per project
 - 25-fragment methodology knowledge base covering the common vulnerability classes
-- 114 unit tests
+- 124 unit tests
 
 > Built for authorized security testing. Point it at systems you own or have
 > written permission to test.
@@ -36,7 +36,7 @@ install. Verify with `npm test`.
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
 | `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
-| `sec_report` | preview or export the assessment as markdown + JSON |
+| `sec_report` | preview or export as markdown, JSON, HTML or PDF, written to the directory the agent was run in |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 

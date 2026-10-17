@@ -323,11 +323,11 @@ test("export writes markdown and json", () => {
     evidence: [],
     limitations: "lab only",
   }
-  const res = writeReport(dir, input, "unit-report")
-  assert.equal(existsSync(res.markdownPath), true)
-  assert.equal(existsSync(res.jsonPath), true)
-  assert.match(res.markdownPath, /unit-report\.md$/)
-  const parsed = JSON.parse(readFileSync(res.jsonPath, "utf8"))
+  const res = writeReport(dir, input, { name: "unit-report", formats: ["md", "json"] })
+  assert.equal(existsSync(res.markdownPath!), true)
+  assert.equal(existsSync(res.jsonPath!), true)
+  assert.match(res.markdownPath!, /unit-report\.md$/)
+  const parsed = JSON.parse(readFileSync(res.jsonPath!, "utf8"))
   assert.equal(parsed.findings.length, 1)
   assert.equal(JSON.parse(renderJson(input)).findings[0].title, "Reflected XSS in search parameter")
 })
