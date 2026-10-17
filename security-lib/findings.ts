@@ -15,10 +15,11 @@
  *     reference we merely could not read does not.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { calculateCvss31, validateCvssBreakdown } from "./cvss31.ts"
+import { atomicWriteJson } from "./atomic.ts"
 import { ensureDir } from "./paths.ts"
 import { redactSecrets } from "./redact.ts"
 import { validateClosure, type ClosureState } from "./precision.ts"
@@ -86,21 +87,59 @@ function storePath(root: string): string {
   return join(root, "findings.json")
 }
 
+/**
+ * Thrown when the store exists on disk but cannot be read.
+ *
+ * This is deliberately fatal rather than a silent empty store. Every write path
+ * is read-modify-write, so a store that reads as empty is a store that the next
+ * call will overwrite with a single new finding — destroying every finding
+ * recorded before it. A store that cannot be read must never be written.
+ */
+export class StoreCorruptError extends Error {
+  readonly path: string
+  readonly detail: string
+
+  constructor(path: string, detail: string) {
+    super(
+      `the findings store at ${path} could not be read (${detail}). ` +
+        `It has been left untouched and nothing was written — a store that cannot be read ` +
+        `must never be overwritten, because that would discard every finding already recorded. ` +
+        `Inspect the file, repair or move it aside, then retry.`,
+    )
+    this.name = "StoreCorruptError"
+    this.path = path
+    this.detail = detail
+  }
+}
+
 function readStore(root: string): Store {
   const p = storePath(root)
   if (!existsSync(p)) return { version: STORE_VERSION, findings: [] }
+
+  let raw: string
   try {
-    const parsed = JSON.parse(readFileSync(p, "utf8")) as Store
-    if (!parsed || !Array.isArray(parsed.findings)) return { version: STORE_VERSION, findings: [] }
-    return { version: parsed.version ?? STORE_VERSION, findings: parsed.findings }
-  } catch {
-    return { version: STORE_VERSION, findings: [] }
+    raw = readFileSync(p, "utf8")
+  } catch (e: any) {
+    throw new StoreCorruptError(p, `unreadable: ${e?.message ?? e}`)
   }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch (e: any) {
+    throw new StoreCorruptError(p, `not valid JSON: ${e?.message ?? e}`)
+  }
+
+  if (!parsed || typeof parsed !== "object" || !Array.isArray((parsed as Store).findings)) {
+    throw new StoreCorruptError(p, "the 'findings' key is missing or is not an array")
+  }
+
+  return { version: (parsed as Store).version ?? STORE_VERSION, findings: (parsed as Store).findings }
 }
 
 function writeStore(root: string, store: Store): void {
   ensureDir(root)
-  writeFileSync(storePath(root), JSON.stringify(store, null, 2), { mode: 0o600 })
+  atomicWriteJson(storePath(root), store)
 }
 
 function norm(v: string | undefined): string {
