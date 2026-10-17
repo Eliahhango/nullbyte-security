@@ -16,10 +16,11 @@
  * without one is worse than stopping.
  */
 
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, writeSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { ensureDir } from "./paths.ts"
 import { redactAndTruncate } from "./redact.ts"
+import { appendProtectedLine, readProtectedLines } from "./secure-io.ts"
 import type { AuditRecord } from "./types.ts"
 
 /** `prev` value for the first record in the chain. */
@@ -76,17 +77,14 @@ export function auditRecordHash(rec: AuditRecord): string {
 function lastRecord(root: string): AuditRecord | undefined {
   const p = auditPath(root)
   if (!existsSync(p)) return undefined
-  const lines = readFileSync(p, "utf8").split("\n")
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!
-    if (!line) continue
-    try {
-      return JSON.parse(line) as AuditRecord
-    } catch (e: any) {
-      throw new AuditCorruptError(p, i + 1, `not valid JSON: ${e?.message ?? e}`)
-    }
+  const lines = readProtectedLines(p)
+  const last = lines.at(-1)
+  if (!last) return undefined
+  try {
+    return JSON.parse(last.text) as AuditRecord
+  } catch (e: any) {
+    throw new AuditCorruptError(p, last.line, `not valid JSON: ${e?.message ?? e}`)
   }
-  return undefined
 }
 
 export function writeAudit(root: string, rec: Omit<AuditRecord, "ts"> & { ts?: string }): void {
@@ -113,16 +111,12 @@ export function writeAudit(root: string, rec: Omit<AuditRecord, "ts"> & { ts?: s
   full.hash = auditRecordHash(full)
 
   try {
-    const fd = openSync(auditPath(root), "a", 0o600)
-    try {
-      writeSync(fd, `${JSON.stringify(full)}\n`)
-      // durable before returning: a record that only reached the page cache is
-      // not a record, and losing it silently is what this trail exists to prevent
-      fsyncSync(fd)
-    } finally {
-      closeSync(fd)
-    }
+    // sealed per line when a key is configured, so the trail stays appendable;
+    // appendProtectedLine fsyncs before returning — a record only in the page
+    // cache is not a record, and losing it silently is what this trail prevents
+    appendProtectedLine(auditPath(root), JSON.stringify(full))
   } catch (e: any) {
+    if (e instanceof AuditCorruptError) throw e
     throw new AuditWriteError(root, e?.message ?? String(e))
   }
 }
@@ -131,12 +125,12 @@ export function writeAudit(root: string, rec: Omit<AuditRecord, "ts"> & { ts?: s
 export function readAudit(root: string, limit = 100): AuditRecord[] {
   const p = auditPath(root)
   if (!existsSync(p)) return []
-  const lines = readFileSync(p, "utf8").split("\n").filter(Boolean)
-  const slice = limit > 0 ? lines.slice(-limit) : lines
+  const all = readProtectedLines(p)
+  const slice = limit > 0 ? all.slice(-limit) : all
   const out: AuditRecord[] = []
   for (const l of slice) {
     try {
-      out.push(JSON.parse(l) as AuditRecord)
+      out.push(JSON.parse(l.text) as AuditRecord)
     } catch {
       /* skip corrupt line */
     }
@@ -169,18 +163,18 @@ export function verifyAudit(root: string): AuditVerification {
   const p = auditPath(root)
   if (!existsSync(p)) return { records: 0, ok: true, problems: [], unchained: 0 }
 
-  const lines = readFileSync(p, "utf8").split("\n").filter(Boolean)
+  const lines = readProtectedLines(p)
   const problems: AuditProblem[] = []
   let expectedPrev = AUDIT_GENESIS
   let expectedSeq = 1
   let head: string | undefined
   let unchained = 0
 
-  lines.forEach((line, i) => {
-    const at = i + 1
+  lines.forEach((l) => {
+    const at = l.line
     let rec: AuditRecord
     try {
-      rec = JSON.parse(line) as AuditRecord
+      rec = JSON.parse(l.text) as AuditRecord
     } catch (e: any) {
       problems.push({ line: at, kind: "unparseable", detail: `not valid JSON: ${e?.message ?? e}` })
       return

@@ -9,7 +9,8 @@
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
 import { join } from "node:path"
-import { atomicWriteFile, atomicWriteJson } from "./atomic.ts"
+import { readProtectedFile, writeProtectedFile } from "./secure-io.ts"
+import { StoreKeyError } from "./crypto.ts"
 import { ensureDir } from "./paths.ts"
 import { redactSecrets } from "./redact.ts"
 
@@ -66,8 +67,10 @@ function readIndex(root: string): EvidenceRecord[] {
 
   let raw: string
   try {
-    raw = readFileSync(p, "utf8")
+    raw = readProtectedFile(p)!
   } catch (e: any) {
+    // a missing key is not corruption: the index is intact, we cannot read it
+    if (e instanceof StoreKeyError) throw e
     throw new EvidenceIndexCorruptError(p, `unreadable: ${e?.message ?? e}`)
   }
 
@@ -84,7 +87,7 @@ function readIndex(root: string): EvidenceRecord[] {
 
 function writeIndex(root: string, records: EvidenceRecord[]): void {
   ensureDir(join(root, "evidence"))
-  atomicWriteJson(indexPath(root), records)
+  writeProtectedFile(indexPath(root), `${JSON.stringify(records, null, 2)}\n`)
 }
 
 export interface SaveEvidenceInput {
@@ -128,7 +131,9 @@ export function saveEvidence(root: string, input: SaveEvidenceInput): SaveEviden
   // enough to be truncated — the check would report tampering on a file nobody
   // had touched.
   const body = truncated ? `${text}\n...[truncated by evidence store]...\n` : text
-  atomicWriteFile(join(dir, file), body)
+  // the hash covers the plaintext payload, so it survives a re-encrypt; and with
+  // encryption off that is still exactly the bytes on disk
+  writeProtectedFile(join(dir, file), body)
 
   const record: EvidenceRecord = {
     id,
@@ -201,7 +206,8 @@ export function verifyEvidence(root: string, id: string): EvidenceVerification {
   const p = join(root, "evidence", rec.file)
   if (!existsSync(p)) return { id, label: rec.label, target: rec.target, state: "missing", expected: rec.sha256 }
 
-  const actual = createHash("sha256").update(readFileSync(p)).digest("hex")
+  // decrypt first: the digest is over the artifact's content, not its encoding
+  const actual = createHash("sha256").update(readProtectedFile(p)!).digest("hex")
   if (!rec.sha256) return { id, label: rec.label, target: rec.target, state: "unhashed", actual }
   return {
     id,
@@ -233,14 +239,14 @@ export function readEvidence(root: string, id: string): string | undefined {
   const p = join(root, "evidence", rec.file)
   if (!existsSync(p)) return undefined
 
-  const content = readFileSync(p)
+  const text = readProtectedFile(p)!
   // verify BEFORE returning: an artifact that fails its hash must never reach a
   // report, or the deliverable launders an altered file as evidence
   if (rec.sha256) {
-    const actual = createHash("sha256").update(content).digest("hex")
+    const actual = createHash("sha256").update(text).digest("hex")
     if (actual !== rec.sha256) throw new EvidenceIntegrityError(id, p, rec.sha256, actual)
   }
-  return content.toString("utf8")
+  return text
 }
 
 /** Resolve a set of evidence ids, reporting any that are missing. */

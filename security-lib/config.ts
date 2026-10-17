@@ -166,6 +166,15 @@ export interface PluginPolicy {
    * single flat engagement directory.
    */
   target_dirs: boolean
+  /**
+   * Require the engagement store to be encrypted at rest (default false).
+   *
+   * The key itself comes from NULLBYTE_STORE_KEY or the key file, never from
+   * this file — a passphrase in a config file that gets committed is not
+   * encryption. With this true and no key, the tools refuse to write rather than
+   * silently storing plaintext. See security-lib/crypto.ts.
+   */
+  encrypt_store: boolean
 }
 
 export function loadPluginPolicy(): PluginPolicy {
@@ -175,6 +184,7 @@ export function loadPluginPolicy(): PluginPolicy {
     inject_permission_rules: true,
     ask_intrusive_commands: false,
     target_dirs: true,
+    encrypt_store: false,
   }
   const path = globalPolicyPath()
   if (!existsSync(path)) return policy
@@ -188,6 +198,7 @@ export function loadPluginPolicy(): PluginPolicy {
   if (typeof p.inject_permission_rules === "boolean") policy.inject_permission_rules = p.inject_permission_rules
   if (typeof p.ask_intrusive_commands === "boolean") policy.ask_intrusive_commands = p.ask_intrusive_commands
   if (typeof p.target_dirs === "boolean") policy.target_dirs = p.target_dirs
+  if (typeof p.encrypt_store === "boolean") policy.encrypt_store = p.encrypt_store
   return policy
 }
 

@@ -11,7 +11,7 @@ and reporting — as a **plugin**, without touching the host CLI.
 - 25-fragment methodology knowledge base
 - Standards-shaped reports: executive summary, timeline, credentials, remediation
   roadmap, risk-rating and revision-history appendices
-- 274 unit tests
+- 290 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -260,6 +260,47 @@ trusted. Records written before chaining was added are reported as unverifiable
 rather than assumed good. The full breakdown is in
 [docs/PENTEST.md](docs/PENTEST.md#4-enforcement).
 
+## Encryption at rest
+
+**Off by default.** With no key configured the store is plaintext, exactly as
+before, and every existing engagement still reads.
+
+The store holds scanner output, HTTP transcripts and — by deliberate policy —
+live credentials in the clear. That is the right call inside the engagement
+directory and the wrong thing to leave on a disk that gets imaged, stolen or
+synced to a backup you do not control. Point the tools at a key and the engagement
+state is sealed with AES-256-GCM:
+
+```bash
+export NULLBYTE_STORE_KEY='a long passphrase'      # or write it to
+                                                    # ~/.config/nullbyte/security.key (chmod 600)
+```
+
+- **What gets sealed:** `findings.json`, every evidence artifact, the evidence
+  index, and the audit trail — per line, so it stays appendable. The hash chain
+  is computed over the *plaintext* records, so `sec_audit action=verify` still
+  works.
+- **Keys are derived with scrypt** (N=2¹⁵, r=8, p=1) using a per-value salt, so
+  the same plaintext seals differently every time and two identical findings do
+  not look identical on disk. Each value carries its own algorithm and KDF
+  parameters in an envelope, so a reader can tell ciphertext from plaintext, and
+  the parameters can be raised later without a migration.
+- **Enabling it is non-destructive.** Reads accept both plaintext and an envelope,
+  so a half-migrated store reads correctly: old records stay plaintext and new
+  ones are sealed.
+- **The key is never in the config file.** It comes from `NULLBYTE_STORE_KEY` or
+  the key file. Set `plugins.encrypt_store: true` to *require* encryption — with
+  no key present, the tools then refuse to write rather than silently storing
+  plaintext, which is the one failure worth refusing to make.
+- **The reported hash still means what it says.** Evidence digests cover the
+  plaintext payload, so with encryption off that is exactly the bytes on disk,
+  and with it on the digest survives a re-encrypt or a key rotation.
+
+Honest scope: this protects data **at rest** — a lost laptop, a copied directory,
+a backup. It does not protect against a process running as the same user, and it
+cannot, because the key has to be readable for the tools to work. Lose the key
+and the data is gone; there is no recovery path, by design.
+
 ## Lab
 
 `node tools/lab/vulnerable-server.mjs` starts a deliberately vulnerable target on
@@ -279,6 +320,10 @@ bind it to a public interface.
   sensitive. `redact=true` removes the shapes it knows; it cannot remove a secret
   it does not recognise, and it cannot undo capture-time redaction.
 - CVSS is base score only (no temporal/environmental).
+- Encryption at rest must be enabled deliberately (see
+  [Encryption at rest](#encryption-at-rest)); it is off until a key is configured.
+  It also does not protect against a process running as the same user — see that
+  section for the honest scope.
 - **A failed audit write refuses the action.** The trail is a control, not a
   log, so if it cannot be written the tool call stops with `AuditWriteError`
   rather than proceeding unlogged. On a read-only or full filesystem this stops

@@ -15,11 +15,12 @@
  *     reference we merely could not read does not.
  */
 
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync } from "node:fs"
 import { join } from "node:path"
 import { randomUUID } from "node:crypto"
 import { calculateCvss31, validateCvssBreakdown } from "./cvss31.ts"
-import { atomicWriteJson } from "./atomic.ts"
+import { readProtectedFile, writeProtectedFile } from "./secure-io.ts"
+import { StoreKeyError } from "./crypto.ts"
 import { ensureDir } from "./paths.ts"
 import { redactSecrets } from "./redact.ts"
 import { validateClosure, type ClosureState } from "./precision.ts"
@@ -120,8 +121,10 @@ function readStore(root: string): Store {
 
   let raw: string
   try {
-    raw = readFileSync(p, "utf8")
+    raw = readProtectedFile(p)!
   } catch (e: any) {
+    // a missing key is not corruption: the file is intact, we cannot read it
+    if (e instanceof StoreKeyError) throw e
     throw new StoreCorruptError(p, `unreadable: ${e?.message ?? e}`)
   }
 
@@ -141,7 +144,8 @@ function readStore(root: string): Store {
 
 function writeStore(root: string, store: Store): void {
   ensureDir(root)
-  atomicWriteJson(storePath(root), store)
+  // sealed when a key is configured, plaintext otherwise; see secure-io.ts
+  writeProtectedFile(storePath(root), `${JSON.stringify(store, null, 2)}\n`)
 }
 
 function norm(v: string | undefined): string {
