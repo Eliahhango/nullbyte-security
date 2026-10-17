@@ -58,7 +58,12 @@ export const secReport = tool({
       .describe("none = omit evidence entirely; index = table of artifacts (default); full = embed every artifact's content"),
     redact: tool.schema.boolean().optional().describe("redact secrets from the deliverables (default false — verbatim); true scrubs secret-like material"),
     limitations: tool.schema.string().optional().describe("what was not tested / blocked / unverified"),
-    provenance: tool.schema.string().optional().describe("agent and tools used, for the report header"),
+    provenance: tool.schema
+      .string()
+      .optional()
+      .describe(
+        "agent and tools used, for the report header. Name the tools and the agent only — never the model, provider or harness. Vendor and model identifiers are stripped from the deliverable regardless",
+      ),
     version: tool.schema.string().optional().describe("document version for the report header (default 1.0)"),
     background: tool.schema.string().optional().describe("why the engagement happened; a default is stated when omitted"),
     objectives: tool.schema.string().optional().describe("what the engagement set out to answer; a default is stated when omitted"),

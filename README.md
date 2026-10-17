@@ -11,7 +11,7 @@ and reporting — as a **plugin**, without touching the host CLI.
 - 25-fragment methodology knowledge base
 - Standards-shaped reports: executive summary, timeline, credentials, remediation
   roadmap, risk-rating and revision-history appendices
-- 198 unit tests
+- 203 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -169,6 +169,10 @@ Every export is stamped with the copyright mark
   stylesheet, which both WeasyPrint and current Chrome render — so it survives
   whichever converter is installed. If no converter is installed the PDF is
   skipped with an install hint; the other three formats are still written.
+- **Provenance is sanitised.** The `provenance` field names the agent and the
+  tools only. Provider, model and harness identifiers are stripped at render
+  time, in every format, so a deliverable cannot disclose the stack that
+  produced it.
 
 ## Scope enforcement
 

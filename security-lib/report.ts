@@ -18,6 +18,43 @@ import type { CredentialRecord } from "./credentials.ts"
 import type { EvidenceRecord } from "./evidence.ts"
 import type { Finding, Severity } from "./types.ts"
 
+/**
+ * Vendor and model identifiers must never reach a deliverable. The report is a
+ * client-facing artifact: naming the harness or the model that produced it is a
+ * branding leak and an information disclosure, and the operator has said so
+ * explicitly. Enforced at render time, so it holds no matter what a caller
+ * passes in `provenance`.
+ *
+ * Deliberately narrow. It strips provider/model slugs (`opencode/deepseek-...`),
+ * bare vendor and model-family names, and the punctuation left behind — but it
+ * does not touch finding content, because a target that happens to be called
+ * "opencode" is evidence, not branding.
+ */
+const VENDOR_SLUG =
+  /\b(?:opencode|anthropic|openai|google|deepseek|gemini|meta|mistral(?:ai)?|qwen|xai|cohere|ollama|azure|vertex|bedrock|perplexity|copilot|groq|fireworks|together)\/[\w.\-]+/gi
+const VENDOR_NAME =
+  /\b(?:gpt-?[\w.\-]+|(?:opencode|anthropic|openai|deepseek|gemini|chatgpt|claude|llama|mistral|qwen|grok|cohere|ollama|bedrock|vertex|perplexity|copilot|groq)(?:[\s\-]+v?[\d][\w.\-]*)?)\b/gi
+
+/** Strip vendor/model identifiers from a provenance string. */
+export function sanitizeProvenance(raw: string): string {
+  let s = raw.replace(VENDOR_SLUG, "").replace(VENDOR_NAME, "")
+  s = s.replace(/\(\s*\)/g, "").replace(/\[\s*\]/g, "") // brackets emptied by a removed slug
+  s = s.replace(/\s{2,}/g, " ")
+  s = s.replace(/\s+([,;.])/g, "$1") // " ," -> ","
+  s = s.replace(/([,;])\s*(?=[,;])/g, "") // collapse duplicate separators
+  s = s.replace(/\bvia\s*$/i, "") // a dangling "via" after a removed slug
+  s = s.replace(/^[\s\-–—:;,./]+/, "")
+  s = s.replace(/[\s\-–—:;,./]+$/, "")
+  return s.replace(/\s{2,}/g, " ").trim()
+}
+
+/** The provenance line, or undefined when nothing identifiable survives. */
+function cleanProvenance(input: ReportInput): string | undefined {
+  const raw = input.provenance?.trim()
+  if (!raw) return undefined
+  return sanitizeProvenance(raw) || undefined
+}
+
 export interface ReportInput {
   engagement: string
   scopeSummary: string
@@ -265,7 +302,8 @@ export function renderMarkdown(input: ReportInput): string {
   lines.push(`- Generated: ${generatedAt}`)
   lines.push(`- Session: ${input.sessionID}`)
   lines.push(`- Document version: ${input.version ?? "1.0"}`)
-  if (input.provenance) lines.push(`- Produced by: ${input.provenance}`)
+  const provenance = cleanProvenance(input)
+  if (provenance) lines.push(`- Produced by: ${provenance}`)
   lines.push(`- Findings: ${input.findings.length}`)
   if (input.selectionNote) lines.push(`- Coverage: ${input.selectionNote}`)
   lines.push("")
@@ -536,7 +574,7 @@ export function renderJson(input: ReportInput): string {
       version: input.version ?? "1.0",
       generated_at: input.generatedAt ?? new Date().toISOString(),
       session: input.sessionID,
-      provenance: input.provenance,
+      provenance: cleanProvenance(input),
       unredacted: input.unredacted ?? false,
       scope: input.scopeSummary,
       background: input.background ?? null,
@@ -662,6 +700,7 @@ export function renderHtml(input: ReportInput): string {
   const counts = severitySummary(input.findings)
   const closures = closureSummary(input.findings)
   const credentials = collectCredentials(input)
+  const provenance = cleanProvenance(input)
   const ordered = [...input.findings].sort(
     (a, b) => ({ critical: 4, high: 3, medium: 2, low: 1, info: 0 })[b.severity] - ({ critical: 4, high: 3, medium: 2, low: 1, info: 0 })[a.severity],
   )
@@ -978,7 +1017,7 @@ ${
   <span>Version: ${escHtml(input.version ?? "1.0")}</span>
   <span>Findings: ${input.findings.length}</span>
 </div>
-${input.provenance ? `<p class="sub">Produced by: ${escHtml(input.provenance)}</p>` : ""}
+${provenance ? `<p class="sub">Produced by: ${escHtml(provenance)}</p>` : ""}
 ${input.selectionNote ? `<p class="sub">Coverage: ${escHtml(input.selectionNote)}</p>` : ""}
 ${input.unredacted ? `<div class="warn">${escHtml(UNREDACTED_WARNING)}</div>` : ""}
 

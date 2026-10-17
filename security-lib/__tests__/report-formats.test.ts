@@ -9,7 +9,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { renderHtml, renderMarkdown, writeReport, ALL_FORMATS, type ReportInput } from "../report.ts"
+import { renderHtml, renderMarkdown, renderJson, sanitizeProvenance, writeReport, ALL_FORMATS, type ReportInput } from "../report.ts"
 import { createFinding, readAllFindings } from "../findings.ts"
 import { findPdfConverter, htmlToPdf, pdfCapabilityLine, COPYRIGHT_TEXT } from "../pdf.ts"
 import type { FindingInput } from "../types.ts"
@@ -110,6 +110,49 @@ test("html carries the closure summary and limitations", () => {
   const html = renderHtml(input())
   assert.match(html, /Closure:/)
   assert.match(html, /Only the \/search endpoint was tested\./)
+})
+
+/* ----------------------------------------------------------- provenance --- */
+
+test("provenance: the harness and the model never reach the deliverable", () => {
+  // the exact string a report was shipped with
+  const raw = "NullByte (opencode/deepseek-v4.1-flash-free) via sec_recon, sec_ports-free manual curl,"
+  assert.equal(sanitizeProvenance(raw), "NullByte via sec_recon, sec_ports-free manual curl")
+})
+
+test("provenance: a bare provider/model slug is removed entirely", () => {
+  assert.equal(sanitizeProvenance("opencode/deepseek-v4.1-flash-free"), "")
+  assert.equal(sanitizeProvenance("produced by openai/gpt-4o"), "produced by")
+})
+
+test("provenance: vendor names go, tool and agent names stay", () => {
+  const clean = "agent=void via NullByte security capability layer"
+  assert.equal(sanitizeProvenance(clean), clean)
+  const tools = "sec_recon, sec_ports, sec_finding"
+  assert.equal(sanitizeProvenance(tools), tools)
+})
+
+test("no rendered format emits the provider or the model", () => {
+  const i = input({ provenance: "NullByte (opencode/deepseek-v4.1-flash-free) via sec_recon" })
+  for (const out of [renderMarkdown(i), renderHtml(i), renderJson(i)]) {
+    assert.equal(/opencode/i.test(out), false, "provider leaked")
+    assert.equal(/deepseek/i.test(out), false, "model leaked")
+  }
+})
+
+test("the provenance scrub is scoped to provenance — finding content is untouched", () => {
+  // a target that happens to be called "opencode" is evidence, not branding
+  const f = {
+    ...createFinding(tmp(), "s1", {
+      ...baseFinding,
+      title: "opencode config left world-readable",
+      description: "the opencode config leaks a provider token",
+    }).finding!,
+  }
+  const md = renderMarkdown(input({ findings: [f], provenance: "opencode/deepseek-v4.1-flash-free" }))
+  assert.match(md, /opencode config left world-readable/)
+  assert.match(md, /the opencode config leaks a provider token/)
+  assert.equal(/deepseek/i.test(md), false)
 })
 
 /* ----------------------------------------------------- copyright / footer --- */
