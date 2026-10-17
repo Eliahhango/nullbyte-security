@@ -170,14 +170,31 @@ Every export is stamped with the copyright mark
   whichever converter is installed. If no converter is installed the PDF is
   skipped with an install hint; the other three formats are still written.
 
-## Posture
+## Scope enforcement
 
-No scope ceremony by default: the operator is the authorizer, so targets are
-permitted at every intensity. Two guards stay on because they protect *your*
-machine, not the target — destructive commands (`rm -rf /`, `mkfs`, `dd` to a raw
-device) and local credential files. Both are switchable off in config.
+Authorization is enforced by the tool layer; it is not delegated to the agent's
+judgement.
 
-For a real engagement with a defined perimeter, write
+### Default posture
+
+With no scope file present, the operator is treated as the authorizer and every
+target is permitted at every intensity. Two guards remain active regardless,
+because they protect the operator's own host rather than the target:
+
+- **Destructive commands** — `rm -rf /`, `mkfs`, and `dd` to a raw device.
+- **Local credential material** — `~/.ssh/id_*`, `~/.aws/credentials`,
+  `auth.json` and browser cookie stores.
+
+Both can be disabled, but they are configured in separate files on purpose:
+`block_destructive` sits in the engagement scope, while
+`plugins.protect_local_secrets` sits in the global policy file
+(`~/.config/nullbyte/security.json`). Keeping the latter out of the project scope
+means a project file cannot switch off the guard that protects the operator's own
+host.
+
+### Defining a perimeter
+
+For an engagement with a defined boundary, author
 `.nullbyte/security/scope.json`:
 
 ```json
@@ -195,13 +212,18 @@ For a real engagement with a defined perimeter, write
 }
 ```
 
-Grammar: `host`, `*.domain` (subdomains only), `domain` (domain + subdomains), IP,
-CIDR, URL. `exclude` always wins. Scope is operator-authored — the agent cannot
-widen it unless you explicitly allow it.
+`include` accepts a hostname, `*.domain` (subdomains only), `domain` (the domain
+and its subdomains), an IP address, a CIDR range, or a URL. `exclude` takes
+precedence over every `include` entry. Scope is authored by the operator: the
+agent cannot widen it unless that is explicitly permitted, via
+`allow_model_scope_edit` in the same file.
 
-Enforcement runs in four layers — permission rules, the tool boundary, the tool
-bodies, and an advisory system prompt — with every decision appended to the
-project's audit log. The full breakdown is in
+### Enforcement layers
+
+Authorization is applied in four independent layers — permission rules, the tool
+boundary, the tool bodies, and an advisory system prompt. Every `allow`, `deny`
+and `ask` decision is appended to the project's audit trail and can be reviewed
+with `sec_audit`. The full breakdown is in
 [docs/PENTEST.md](docs/PENTEST.md#4-enforcement).
 
 ## Lab
