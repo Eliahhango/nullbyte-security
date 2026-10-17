@@ -24,6 +24,12 @@ tools/lab/certs/
 tools/lab/*.log
 tools/lab/*.bak
 
+# rebrand: never commit the 185MB CLI binaries, only the toolchain
+tools/rebrand/*.stock
+tools/rebrand/*.patched
+tools/rebrand/*.new
+tools/rebrand/__pycache__/
+
 # editor / os
 .DS_Store
 *.swp
