@@ -11,7 +11,7 @@ and reporting — as a **plugin**, without touching the host CLI.
 - 25-fragment methodology knowledge base
 - Standards-shaped reports: executive summary, timeline, credentials, remediation
   roadmap, risk-rating and revision-history appendices
-- 203 unit tests
+- 249 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -123,6 +123,7 @@ directory you ran nullbyte from:
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
 | `sec_evidence` | store/retrieve raw artifacts, SHA-256 indexed and re-checked on read (`action=verify` audits the whole store); stored verbatim by default, `include_secrets=false` redacts at capture |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
+| `sec_retest` | re-check a finding's reproduction: `action=run` re-executes a command under the same scope/destructive guards and captures the output, `action=record` logs a manual re-check; append-only history, and a retest that contradicts the closure reopens the finding |
 | `sec_report` | preview or export as markdown, JSON, HTML or PDF into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made; `action=verify` recomputes the trail's hash chain to prove it was not edited |

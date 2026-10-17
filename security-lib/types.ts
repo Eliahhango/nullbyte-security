@@ -163,6 +163,36 @@ export interface EvidenceRefCheck {
   state: "exists" | "missing" | "forbidden" | "unavailable" | "invalid"
 }
 
+/**
+ * One re-execution of a finding's reproduction.
+ *
+ * Retests are appended, never overwritten: the point is a dated record of what
+ * was checked and what it showed, so a finding that was confirmed and later
+ * refuted carries both facts. `before`/`after` make the change explicit rather
+ * than leaving it to be inferred from the current verification field.
+ */
+export interface RetestRecord {
+  at: string
+  /** who performed the retest */
+  by: string
+  /** how it was performed — a command, an HTTP request, a manual check */
+  method: string
+  /** the verification status the finding carried before this retest */
+  before: VerificationStatus
+  /** the status this retest establishes */
+  after: VerificationStatus
+  /** what was observed */
+  observed: string
+  command?: string
+  /** evidence artifact captured by an action=run retest */
+  evidence_id?: string
+  exit_code?: number
+  /** revision of the finding the retest was performed against */
+  revision: number
+  /** set when this retest contradicted the recorded closure, forcing a reopen */
+  reopened?: boolean
+}
+
 export interface Finding extends FindingInput {
   id: string
   sessionID: string
@@ -185,6 +215,8 @@ export interface Finding extends FindingInput {
   revision: number
   /** set when the closure claim was not granted */
   closure_downgraded?: boolean
+  /** append-only history of reproduction re-checks, oldest first */
+  retests?: RetestRecord[]
 }
 
 export const SEVERITY_ORDER: Record<Severity, number> = {

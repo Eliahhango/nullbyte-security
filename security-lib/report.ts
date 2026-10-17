@@ -113,6 +113,15 @@ function esc(s: string | undefined): string {
   return s.replace(/\r/g, "")
 }
 
+/**
+ * Markdown table cell. A retest method is usually a shell command, and a command
+ * containing a pipe would otherwise split the row into extra columns.
+ */
+function cell(s: string | undefined, max = 200): string {
+  const t = esc(s).replace(/\|/g, "\\|").replace(/\s*\n\s*/g, " ")
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t
+}
+
 /* ------------------------------------------------------- derived structure --- */
 
 /** First sentence of a block of prose, for one-line roll-ups. */
@@ -422,6 +431,19 @@ export function renderMarkdown(input: ReportInput): string {
       lines.push("```")
       lines.push(esc(f.reproduction))
       lines.push("```")
+      lines.push("")
+    }
+    if (f.retests?.length) {
+      lines.push("**Retest history**")
+      lines.push("")
+      lines.push("| When | Verification | Method | Observed |")
+      lines.push("| --- | --- | --- | --- |")
+      for (const r of f.retests) {
+        const method = r.command ?? r.method
+        lines.push(
+          `| ${cell(r.at)} | ${cell(r.before)} → ${cell(r.after)}${r.reopened ? " (reopened)" : ""} | \`${cell(method, 120)}\` | ${cell(r.observed)} |`,
+        )
+      }
       lines.push("")
     }
     lines.push("**Remediation**")
@@ -748,6 +770,13 @@ ${block("Demonstrated by", f.demonstrated_by)}
 ${f.ruled_out_by ? block("Ruled out by", `${f.ruled_out_by}${f.ruled_out_at ? ` — at ${f.ruled_out_at}` : ""}`) : ""}
 ${block("Evidence", f.evidence)}
 ${block("Reproduction", f.reproduction)}
+${f.retests?.length ? `<section><h3>Retest history</h3><table class="retests"><thead><tr><th>When</th><th>Verification</th><th>Method</th><th>Observed</th></tr></thead><tbody>${f.retests
+  .map(
+    (r) =>
+      `<tr><td>${escHtml(r.at)}</td><td>${escHtml(r.before)} → ${escHtml(r.after)}${r.reopened ? " <em>(reopened)</em>" : ""}</td>` +
+      `<td><code>${escHtml(r.command ?? r.method)}</code></td><td>${escHtml(r.observed)}</td></tr>`,
+  )
+  .join("")}</tbody></table></section>` : ""}
 ${block("Remediation", f.remediation)}
 ${block("Counterevidence considered", f.counterevidence)}
 ${block("Severity changes if", f.severity_change_conditions)}

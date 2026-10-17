@@ -29,8 +29,10 @@ import {
   type Finding,
   type FindingInput,
   type FindingStatus,
+  type RetestRecord,
   type Severity,
   type FixEffort,
+  type VerificationStatus,
 } from "./types.ts"
 
 const STORE_VERSION = 1
@@ -520,6 +522,88 @@ export function updateFinding(
     problems: verdict.downgraded ? verdict.problems : [],
     closureDowngraded: verdict.downgraded || undefined,
   }
+}
+
+/* ---------------------------------------------------------------- retests --- */
+
+export interface RetestInput {
+  by: string
+  method: string
+  status: VerificationStatus
+  observed: string
+  command?: string
+  evidenceId?: string
+  exitCode?: number
+}
+
+export interface RetestResult {
+  finding?: Finding
+  entry?: RetestRecord
+  problems?: string[]
+  /** set when the retest contradicted the recorded closure */
+  reopened?: boolean
+}
+
+/**
+ * Append a reproduction re-check to a finding and update its verification.
+ *
+ * Deliberately not part of `updateFinding`: that takes a whole field value, so a
+ * caller could rewrite or drop retest history. History is append-only here.
+ *
+ * A retest that contradicts the recorded closure — a `refuted` on a confirmed
+ * finding, a `verified` on a ruled-out one — reopens it to `open_proof_gap`
+ * rather than leaving the store asserting two incompatible things. The reopen is
+ * reported, not silent, because the finding now needs re-closing on evidence.
+ */
+export function recordRetest(root: string, id: string, input: RetestInput): RetestResult {
+  const problems: string[] = []
+  if (!input.method?.trim()) problems.push("a retest must record how it was performed (method)")
+  if (!input.observed?.trim()) problems.push("a retest must record what was observed")
+  if (!input.by?.trim()) problems.push("a retest must record who performed it")
+  if (problems.length) return { problems }
+
+  const store = readStore(root)
+  const idx = store.findings.findIndex((f) => f.id === id)
+  if (idx === -1) return { problems: [`finding ${id} not found`] }
+  const current = store.findings[idx]!
+
+  const contradicts =
+    (input.status === "refuted" && current.closure === "confirmed") ||
+    (input.status === "verified" && current.closure === "ruled_out")
+
+  const entry: RetestRecord = {
+    at: new Date().toISOString(),
+    by: input.by,
+    method: input.method,
+    before: current.verification,
+    after: input.status,
+    observed: input.observed,
+    command: input.command,
+    evidence_id: input.evidenceId,
+    exit_code: input.exitCode,
+    revision: current.revision,
+    reopened: contradicts || undefined,
+  }
+
+  const next: Finding = { ...current }
+  next.retests = [...(current.retests ?? []), entry]
+  next.verification = input.status
+  if (contradicts) {
+    // the confirmation or rule-out no longer holds, so it is withdrawn
+    next.closure = "open_proof_gap"
+    next.closure_downgraded = true
+    next.status = deriveStatus("open_proof_gap")
+    problems.push(
+      `this retest contradicts the recorded closure '${current.closure}': the finding has been reopened to open_proof_gap ` +
+        `and its verification set to '${input.status}'. Re-close it on evidence once the discrepancy is resolved.`,
+    )
+  }
+  next.updated_at = entry.at
+  next.revision = current.revision + 1
+  next.fingerprint = createFindingFingerprint(next)
+  store.findings[idx] = next
+  writeStore(root, store)
+  return { finding: next, entry, problems, reopened: contradicts || undefined }
 }
 
 /** Severity histogram for reporting. */

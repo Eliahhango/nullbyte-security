@@ -9,6 +9,7 @@ import { secScan } from "./scan.ts"
 import { secSast } from "./sast.ts"
 import { secEvidence } from "./evidence.ts"
 import { secFinding } from "./findings.ts"
+import { secRetest } from "./retest.ts"
 import { secReport } from "./report.ts"
 import { secMethodology, secAudit } from "./knowledge.ts"
 
@@ -20,6 +21,7 @@ export const SECURITY_TOOL_IDS = [
   "sec_sast",
   "sec_evidence",
   "sec_finding",
+  "sec_retest",
   "sec_report",
   "sec_methodology",
   "sec_audit",
@@ -36,6 +38,7 @@ export function buildSecurityTools(): Record<string, any> {
     sec_sast: secSast,
     sec_evidence: secEvidence,
     sec_finding: secFinding,
+    sec_retest: secRetest,
     sec_report: secReport,
     sec_methodology: secMethodology,
     sec_audit: secAudit,
