@@ -10,7 +10,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { loadScope, scopeTemplate, validateScope } from "../config.ts"
 import { authorize, describeScope } from "../scope.ts"
 import { writeAudit } from "../audit.ts"
-import { splitTarget, type ToolCtxLike } from "./shared.ts"
+import { splitTarget, projectRootFor, type ToolCtxLike } from "./shared.ts"
+import { ensureTargetQuietly } from "../target-dir.ts"
 import type { Intensity } from "../types.ts"
 
 const INTENSITIES = ["passive", "safe-active", "intrusive", "exploit"] as const
@@ -65,6 +66,16 @@ export const secScope = tool({
         reason: decision.reason,
         targets: [target.host],
       })
+      // Naming an authorized target is enough to give it a directory, so the
+      // operator can see where its output will land before anything runs. A
+      // denied target gets nothing — the directory is a consequence of
+      // authorization, not of the request.
+      const targetDirLine = decision.allowed
+        ? (() => {
+            const paths = ensureTargetQuietly(projectRootFor(c), target.host)
+            return paths ? `target directory: ${paths.root}` : ""
+          })()
+        : ""
       return [
         `target: ${target.host}${target.port ? `:${target.port}` : ""}`,
         `requested intensity: ${intensity}`,
@@ -72,6 +83,7 @@ export const secScope = tool({
         `code: ${decision.code}`,
         `reason: ${decision.reason}`,
         decision.matched ? `matched entry: ${decision.matched}` : "",
+        targetDirLine,
         decision.requiresApproval ? "note: this operation additionally requires interactive operator approval" : "",
       ]
         .filter(Boolean)

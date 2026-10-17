@@ -1,10 +1,12 @@
 /**
- * Report evidence embedding and redaction control.
+ * Report evidence embedding and the full-disclosure posture.
  *
  * The operator asked to see everything that was found — including leaked
- * credentials — in every format. These tests pin both halves of that contract:
- * redaction is on by default and applies to every text format, and the explicit
- * opt-out emits verbatim content while marking the artifact as sensitive.
+ * credentials — in every format. The default posture is now full disclosure:
+ * evidence is stored verbatim at capture and the report emits it verbatim, so a
+ * leaked credential appears in full. `redact: true` / `includeSecrets: false`
+ * remain as the opt-out. These tests pin both halves: the verbatim default and
+ * the explicit scrub.
  */
 
 import test from "node:test"
@@ -50,33 +52,43 @@ function input(over: Partial<ReportInput> = {}): ReportInput {
 
 /* ----------------------------------------------------------- redaction --- */
 
-test("redaction is on by default in every text format", () => {
-  const dir = tmp()
-  const res = writeReport(
-    dir,
-    input({
-      findings: [
-        {
-          id: "F-1",
-          title: "Exposed .env",
-          severity: "high",
-          status: "confirmed",
-          closure: "confirmed",
-          confidence: "high",
-          verification: "verified",
-          source: "manual",
-          evidence: LEAK,
-          created_at: "2026-01-01T00:00:00.000Z",
-          updated_at: "2026-01-01T00:00:00.000Z",
-          revision: 1,
-          sessionID: "s1",
-        } as any,
-      ],
-    }),
-    { name: "r" },
-  )
+function leakFinding(): any {
+  return {
+    id: "F-1",
+    title: "Exposed .env",
+    severity: "high",
+    status: "confirmed",
+    closure: "confirmed",
+    confidence: "high",
+    verification: "verified",
+    source: "manual",
+    evidence: LEAK,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    revision: 1,
+    sessionID: "s1",
+  }
+}
 
-  for (const f of res.files) {
+test("the default posture is verbatim in every text format", () => {
+  const dir = tmp()
+  const res = writeReport(dir, input({ findings: [leakFinding()] }), { name: "r" })
+
+  // pdf is a binary rendering of the same html; text extraction is not ours to assert
+  for (const f of res.files.filter((x) => x.format !== "pdf")) {
+    const body = readFileSync(f.path, "utf8")
+    assert.ok(body.includes(SECRET), `${f.format} hid the secret`)
+  }
+  // the appendix mentions the token as documentation; the secret itself must be untouched
+  assert.ok(res.markdown.includes(LEAK), "the finding's evidence was scrubbed")
+  assert.equal(res.markdown.includes("db_password: [REDACTED:credential]"), false)
+})
+
+test("redact:true scrubs the secret from every text format", () => {
+  const dir = tmp()
+  const res = writeReport(dir, input({ findings: [leakFinding()] }), { name: "r", redact: true })
+
+  for (const f of res.files.filter((x) => x.format !== "pdf")) {
     const body = readFileSync(f.path, "utf8")
     assert.equal(body.includes(SECRET), false, `${f.format} leaked the secret`)
   }
@@ -84,11 +96,20 @@ test("redaction is on by default in every text format", () => {
   assert.equal(res.html.includes(SECRET), false)
 })
 
-test("json is redacted too — it is a deliverable like any other", () => {
+test("json is a deliverable like any other — verbatim by default, scrubbed on request", () => {
   const dir = tmp()
-  const res = writeReport(dir, input({ evidence: [artifact()] }), { name: "r", formats: ["json"] })
-  const body = readFileSync(res.files[0].path, "utf8")
-  assert.equal(body.includes(SECRET), false)
+  const verbatim = writeReport(dir, input({ evidence: [artifact()], evidenceContent: { "E-deadbeef": LEAK } }), {
+    name: "v",
+    formats: ["json"],
+  })
+  assert.ok(readFileSync(verbatim.files[0].path, "utf8").includes(SECRET))
+
+  const scrubbed = writeReport(dir, input({ evidence: [artifact()], evidenceContent: { "E-deadbeef": LEAK } }), {
+    name: "s",
+    formats: ["json"],
+    redact: true,
+  })
+  assert.equal(readFileSync(scrubbed.files[0].path, "utf8").includes(SECRET), false)
 })
 
 /* -------------------------------------------------- unredacted opt-out --- */
@@ -151,24 +172,24 @@ test("a missing artifact file is reported, not silently dropped", () => {
 
 /* ------------------------------------------------------ capture boundary --- */
 
-test("sec_evidence default redacts the secret before it touches disk", () => {
+test("sec_evidence stores the credential verbatim by default", () => {
   const root = tmp()
   const res = saveEvidence(root, { sessionID: "s1", source: "manual", label: "env", content: LEAK })
-  assert.equal(res.record?.redacted, true)
-  assert.equal(readEvidence(root, res.record!.id)!.includes(SECRET), false)
-})
-
-test("sec_evidence includeSecrets stores the credential verbatim", () => {
-  const root = tmp()
-  const res = saveEvidence(root, { sessionID: "s1", source: "manual", label: "env", content: LEAK, includeSecrets: true })
   assert.equal(res.record?.redacted, false)
   assert.ok(readEvidence(root, res.record!.id)!.includes(SECRET))
+})
+
+test("sec_evidence includeSecrets:false redacts the secret before it touches disk", () => {
+  const root = tmp()
+  const res = saveEvidence(root, { sessionID: "s1", source: "manual", label: "env", content: LEAK, includeSecrets: false })
+  assert.equal(res.record?.redacted, true)
+  assert.equal(readEvidence(root, res.record!.id)!.includes(SECRET), false)
 })
 
 test("capture-time redaction is irreversible from the report", () => {
   // an artifact redacted at capture cannot be recovered by asking for full evidence
   const root = tmp()
-  const res = saveEvidence(root, { sessionID: "s1", source: "manual", label: "env", content: LEAK })
+  const res = saveEvidence(root, { sessionID: "s1", source: "manual", label: "env", content: LEAK, includeSecrets: false })
   const stored = readEvidence(root, res.record!.id)!
   const md = renderMarkdown(input({ evidence: [res.record!], evidenceContent: { [res.record!.id]: stored } }))
   assert.equal(md.includes(SECRET), false)

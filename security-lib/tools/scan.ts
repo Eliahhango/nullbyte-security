@@ -23,7 +23,8 @@ import {
 import { saveEvidence } from "../evidence.ts"
 import { parsePortSpec } from "../net/ports.ts"
 import { portAllowance } from "../scope.ts"
-import { enforce, enforcePorts, scopeFor, splitTarget, type ToolCtxLike } from "./shared.ts"
+import { writeTargetLog, type TargetLogResult } from "../target-dir.ts"
+import { enforce, enforcePorts, projectRootFor, scopeFor, splitTarget, type ToolCtxLike } from "./shared.ts"
 import type { Intensity, Severity } from "../types.ts"
 
 const ADAPTERS = ["nmap", "nuclei", "nikto", "whatweb", "sslscan", "sqlmap"] as const
@@ -35,7 +36,9 @@ export const secScan = tool({
     "Adapters: nmap (port/service, profiles connect|service|intrusive), nuclei (template scan), nikto (web misconfig), " +
     "whatweb (tech fingerprint), sslscan (TLS config). Every adapter checks the binary exists first and returns install " +
     "guidance if it does not; raw output is saved as evidence. Intrusive profiles require operator approval. " +
-    "Scanner output is a lead, not a finding — verify before reporting.",
+    "Scanner output is a lead, not a finding — verify before reporting. " +
+    "Set logs=true to also keep the scanner's raw stdout/stderr as a .log file under the target's own directory. " +
+    "Both the log and the evidence artifact are stored verbatim by default (include_secrets=false redacts both at capture).",
   args: {
     action: tool.schema.enum(["capabilities", "run"]).describe("capabilities = list installed scanners; run = execute one"),
     adapter: tool.schema.enum(ADAPTERS).optional().describe("which scanner (required for action=run)"),
@@ -44,6 +47,14 @@ export const secScan = tool({
     ports: tool.schema.string().optional().describe("port spec, e.g. '80,443,8000-8010'"),
     severity: tool.schema.array(tool.schema.enum(SEV)).optional().describe("nuclei severity filter"),
     timeout_ms: tool.schema.number().optional().describe("hard timeout (default 300000)"),
+    logs: tool.schema
+      .boolean()
+      .optional()
+      .describe("keep the scanner's raw stdout/stderr as a .log file in the target's directory (default false)"),
+    include_secrets: tool.schema
+      .boolean()
+      .optional()
+      .describe("store the log and the evidence artifact verbatim (default true); false redacts secret-like material at capture, irreversibly"),
   },
   async execute(args, ctx: any) {
     const c = ctx as ToolCtxLike
@@ -105,19 +116,56 @@ export const secScan = tool({
 
     c.metadata?.({ title: `sec_scan ${toolId} ${target.host}` })
 
+    const keepLogs = args.logs === true
+    const includeSecrets = args.include_secrets !== false
+    const scanOpts = { timeoutMs, includeSecrets }
+
+    /**
+     * Persist the scanner's raw stdout/stderr under the target's own directory.
+     *
+     * Note the ordering: the adapter redacts at capture, so `includeSecrets` has
+     * to be decided before the process runs. Redacting here instead would give a
+     * log that merely looks verbatim.
+     */
+    const keepRawLog = (run: { command?: string; exitCode?: number | null; durationMs?: number; stdout?: string; stderr?: string; problems?: string[] }): TargetLogResult | undefined => {
+      if (!keepLogs) return undefined
+      try {
+        return writeTargetLog(projectRootFor(c), {
+          sessionID: c.sessionID,
+          source: toolId,
+          target: target.host,
+          command: run.command,
+          exitCode: run.exitCode ?? undefined,
+          durationMs: run.durationMs,
+          stdout: run.stdout,
+          stderr: run.stderr,
+          problems: run.problems,
+          includeSecrets,
+        })
+      } catch {
+        return undefined
+      }
+    }
+
+    const logLine = (lg?: TargetLogResult): string =>
+      !lg ? "" : `raw log: ${lg.path} (${lg.redacted ? "secret-like material redacted" : "verbatim"})`
+
     if (toolId === "nmap") {
       const profile = args.profile ?? "connect"
-      const { run, result } = await runNmap(target.host, profile, ports, bin, { timeoutMs })
+      const { run, result } = await runNmap(target.host, profile, ports, bin, scanOpts)
       const ev = saveEvidence(root, {
         sessionID: c.sessionID,
         source: "nmap",
         label: `nmap ${profile} ${target.host}`,
         target: target.host,
         content: run.stdout || run.stderr,
+        includeSecrets,
       })
+      const lg = keepRawLog(run)
       const lines = [`nmap ${profile} ${target.host} — exit ${run.exitCode} in ${run.durationMs}ms`]
       lines.push(`command: ${run.command}`)
       if (ev.record) lines.push(`raw evidence: ${ev.record.id}`)
+      if (lg) lines.push(logLine(lg))
       if (run.problems.length) lines.push(`problems: ${run.problems.join("; ")}`)
       if (result) {
         const open = result.ports.filter((p) => p.state === "open")
@@ -139,12 +187,14 @@ export const secScan = tool({
     if (toolId === "nuclei") {
       const url = target.scheme ? args.target! : `https://${target.host}${target.port ? `:${target.port}` : ""}`
       const argv = buildNucleiArgs(url, intensity, args.severity as Severity[] | undefined)
-      const run = await runArgv(bin, argv, { timeoutMs })
+      const run = await runArgv(bin, argv, scanOpts)
       const findings = parseNucleiJsonl(run.stdout)
-      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "nuclei", label: `nuclei ${url}`, target: target.host, content: run.stdout || run.stderr })
+      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "nuclei", label: `nuclei ${url}`, target: target.host, content: run.stdout || run.stderr, includeSecrets })
+      const lg = keepRawLog(run)
       const lines = [`nuclei ${url} — exit ${run.exitCode} in ${run.durationMs}ms, ${findings.length} template hits`]
       lines.push(`command: ${run.command}`)
       if (ev.record) lines.push(`raw evidence: ${ev.record.id}`)
+      if (lg) lines.push(logLine(lg))
       if (run.problems.length) lines.push(`problems: ${run.problems.join("; ")}`)
       for (const f of findings) {
         lines.push(`  [${f.severity}] ${f.templateId}: ${f.name} @ ${f.matchedAt}`)
@@ -160,14 +210,16 @@ export const secScan = tool({
       const { run, file } = await runWithTempfile(
         bin,
         (tmp) => ["-h", target.host, "-p", String(port), "-Format", "json", "-output", tmp, "-nointeractive", "-maxtime", "120s"],
-        { timeoutMs },
+        { timeoutMs, includeSecrets },
       )
       const text = readTempfile(file)
       const items = parseNiktoJson(text)
-      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "nikto", label: `nikto ${target.host}:${port}`, target: target.host, content: text || run.stdout || run.stderr })
+      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "nikto", label: `nikto ${target.host}:${port}`, target: target.host, content: text || run.stdout || run.stderr, includeSecrets })
+      const lg = keepRawLog({ ...run, stdout: text || run.stdout })
       const lines = [`nikto ${target.host}:${port} — exit ${run.exitCode} in ${run.durationMs}ms, ${items.length} items`]
       lines.push(`command: ${run.command}`)
       if (ev.record) lines.push(`raw evidence: ${ev.record.id}`)
+      if (lg) lines.push(logLine(lg))
       if (run.problems.length) lines.push(`problems: ${run.problems.join("; ")}`)
       for (const i of items.slice(0, 100)) lines.push(`  ${i.id}: ${i.msg}${i.url ? ` (${i.url})` : ""}`)
       if (!items.length) lines.push("no parseable nikto items; inspect raw evidence")
@@ -176,11 +228,13 @@ export const secScan = tool({
 
     if (toolId === "whatweb") {
       const url = target.scheme ? args.target! : `http://${target.host}${target.port ? `:${target.port}` : ""}`
-      const run = await runArgv(bin, ["--log-json=-", "--no-errors", "-a", "1", url], { timeoutMs: Math.min(timeoutMs, 120000) })
+      const run = await runArgv(bin, ["--log-json=-", "--no-errors", "-a", "1", url], { ...scanOpts, timeoutMs: Math.min(timeoutMs, 120000) })
       const hits = parseWhatWebJson(run.stdout)
-      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "whatweb", label: `whatweb ${url}`, target: target.host, content: run.stdout || run.stderr })
+      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "whatweb", label: `whatweb ${url}`, target: target.host, content: run.stdout || run.stderr, includeSecrets })
+      const lg = keepRawLog(run)
       const lines = [`whatweb ${url} — exit ${run.exitCode} in ${run.durationMs}ms`]
       if (ev.record) lines.push(`raw evidence: ${ev.record.id}`)
+      if (lg) lines.push(logLine(lg))
       for (const h of hits) lines.push(`  ${h.target}: ${Object.keys(h.plugins).join(", ")}`)
       if (!hits.length) lines.push("no parseable whatweb output")
       return lines.join("\n")
@@ -188,8 +242,9 @@ export const secScan = tool({
 
     if (toolId === "sslscan") {
       const port = target.port ?? 443
-      const run = await runArgv(bin, ["--no-colour", `${target.host}:${port}`], { timeoutMs: Math.min(timeoutMs, 180000) })
-      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "sslscan", label: `sslscan ${target.host}:${port}`, target: target.host, content: run.stdout || run.stderr })
+      const run = await runArgv(bin, ["--no-colour", `${target.host}:${port}`], { ...scanOpts, timeoutMs: Math.min(timeoutMs, 180000) })
+      const ev = saveEvidence(root, { sessionID: c.sessionID, source: "sslscan", label: `sslscan ${target.host}:${port}`, target: target.host, content: run.stdout || run.stderr, includeSecrets })
+      const lg = keepRawLog(run)
       const interesting = run.stdout
         .split("\n")
         .filter((l) => /SSLv|TLSv|Accepted|Enabled|Certificate|Signature Algorithm|RSA Key|Expired|Self-signed/i.test(l))
@@ -197,6 +252,7 @@ export const secScan = tool({
       return [
         `sslscan ${target.host}:${port} — exit ${run.exitCode} in ${run.durationMs}ms`,
         ev.record ? `raw evidence: ${ev.record.id}` : "",
+        lg ? logLine(lg) : "",
         ...interesting.map((l) => `  ${l.trim()}`),
       ]
         .filter(Boolean)

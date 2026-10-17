@@ -12,6 +12,8 @@ import { authorize, authorizePorts, authorizeResolved, describeScope } from "../
 import { resolveAddresses } from "../net/dns.ts"
 import { isIp } from "../netsafe.ts"
 import { writeAudit } from "../audit.ts"
+import { resolveProjectRoot } from "../paths.ts"
+import { ensureTargetQuietly, targetPaths, type TargetPaths } from "../target-dir.ts"
 import type { Decision, Intensity, Target } from "../types.ts"
 
 export interface ToolCtxLike {
@@ -35,6 +37,19 @@ export class SecurityDenied extends Error {
 
 export function scopeFor(worktree: string): LoadedScope {
   return loadScope(worktree)
+}
+
+/** The project the agent was run in — the base for per-target directories. */
+export function projectRootFor(ctx: ToolCtxLike): string {
+  return resolveProjectRoot(ctx.worktree)
+}
+
+/**
+ * Where a target's deliverables and logs belong. Pure lookup, no disk access —
+ * so a tool can name the destination without creating it.
+ */
+export function targetPathsFor(ctx: ToolCtxLike, host: string): TargetPaths {
+  return targetPaths(projectRootFor(ctx), host)
 }
 
 function fail(ctx: ToolCtxLike, root: string, tool: string, decision: Decision, target: Target): never {
@@ -143,6 +158,11 @@ export async function enforcePorts(args: {
     targets: [host],
   })
 
+  // Authorization succeeded, so the target now has a directory. This is the
+  // single choke point every network tool funnels through, which is why the
+  // directory appears on first contact with a target and never on a denial.
+  ensureTargetQuietly(projectRootFor(ctx), host)
+
   return { loaded, decision: portCheck.decision }
 }
 
@@ -216,6 +236,8 @@ export async function enforce(args: EnforceArgs): Promise<EnforceResult> {
     args: `${target.host}${target.port ? `:${target.port}` : ""}`,
     targets: [target.host],
   })
+
+  ensureTargetQuietly(projectRootFor(ctx), target.host)
 
   return { loaded, decision }
 }

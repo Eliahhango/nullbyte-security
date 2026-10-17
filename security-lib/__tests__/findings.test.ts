@@ -171,10 +171,20 @@ test("a different endpoint is a distinct finding", () => {
   assert.equal(readAllFindings(dir).length, 2)
 })
 
-test("evidence is redacted on write", () => {
-  const r = createFinding(root(), "s1", finding({ evidence: "cookie: session=abc; api_key = supersecretvalue123" }))
-  assert.match(r.finding!.evidence, /REDACTED/)
-  assert.doesNotMatch(r.finding!.evidence, /supersecretvalue123/)
+test("finding evidence is stored verbatim by default", () => {
+  const r = createFinding(root(), "s1", finding({ title: "Verbatim evidence", evidence: "cookie: session=abc; api_key = supersecretvalue123" }))
+  assert.match(r.finding!.evidence!, /supersecretvalue123/)
+})
+
+test("finding evidence is redacted on write when redactEvidence is set", () => {
+  const r = createFinding(
+    root(),
+    "s1",
+    finding({ title: "Redacted evidence", evidence: "cookie: session=abc; api_key = supersecretvalue123" }),
+    { redactEvidence: true },
+  )
+  assert.match(r.finding!.evidence!, /REDACTED/)
+  assert.doesNotMatch(r.finding!.evidence!, /supersecretvalue123/)
 })
 
 test("list, filter and severity summary", () => {
@@ -271,7 +281,7 @@ test("semantic similarity flags a near-duplicate without merging it", () => {
 
 /* ------------------------------------------------------------- evidence --- */
 
-test("evidence is stored redacted with a hash and read back by id", () => {
+test("evidence is stored redacted with a hash and read back by id when redaction is requested", () => {
   const dir = root()
   const saved = saveEvidence(dir, {
     sessionID: "s1",
@@ -279,6 +289,7 @@ test("evidence is stored redacted with a hash and read back by id", () => {
     label: "tls transcript",
     content: "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghij",
     target: "app.example.com",
+    includeSecrets: false,
   })
   assert.equal(saved.problems.length, 0)
   assert.equal(saved.record?.sha256.length, 64)

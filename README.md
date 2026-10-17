@@ -9,7 +9,9 @@ and reporting — as a **plugin**, without touching the host CLI.
 - Authorized by default, with opt-in perimeter lockdown for real engagements
 - Findings, evidence, audit trail and reports persisted per project
 - 25-fragment methodology knowledge base
-- 154 unit tests
+- Standards-shaped reports: executive summary, timeline, credentials, remediation
+  roadmap, risk-rating and revision-history appendices
+- 198 unit tests
 
 > Authorized testing only. Point it at systems you own or have written permission
 > to test.
@@ -62,6 +64,39 @@ sec_report action=export format=all
 Switch inside the TUI, or per run with `--agent`. The modes live in
 `~/.config/nullbyte/agent/*.md` — edit those to change behaviour, then restart.
 
+### Target directories
+
+Contacting a target creates a directory for it, named after the host, in the
+directory you ran nullbyte from:
+
+```
+~/Desktop/
+  app.acme.test/
+    reports/    report.md | .json | .html | .pdf
+    logs/       nmap-2026-10-17T02-00-05-311Z.log
+  api.acme.test/
+    reports/
+    logs/
+```
+
+- Created the moment a target is first **authorized**. A denied target gets
+  nothing — the directory is a consequence of authorization, not of the attempt.
+- One directory per host: `app.acme.test:443`, `app.acme.test:8080` and
+  `https://app.acme.test/x` all resolve to `app.acme.test/`.
+- Revisiting a target reuses its directory, so a second target never overwrites
+  the first one's output.
+- `sec_report` files there automatically. A report spanning several hosts cannot
+  live in any single one, so it goes to `reports/` in the project root instead.
+- `sec_scan logs=true` keeps the scanner's raw stdout/stderr. Logs are stored
+  verbatim by default; pass `include_secrets=false` to redact at capture.
+- The directory ignores itself in git — it contains raw tool output, which
+  routinely carries credentials.
+- The findings store, evidence and audit trail stay engagement-wide under
+  `.nullbyte/security/`. Only deliverables are split per target, because
+  sharding the store would break the closure gate and cross-session continuity.
+- Turn it off with `"plugins": { "target_dirs": false }` in
+  `~/.config/nullbyte/security.json`.
+
 ### CLI commands
 
 | Command | Does |
@@ -84,15 +119,56 @@ Switch inside the TUI, or per run with `--agent`. The modes live in
 | `sec_scope` | authorization mode; `check` a target; `init` writes a starter scope |
 | `sec_recon` | `dns\|http\|tls\|headers\|fingerprint` — real network calls |
 | `sec_ports` | bounded TCP connect scan + banner grab |
-| `sec_scan` | adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap |
+| `sec_scan` | adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap; `logs=true` keeps the raw stdout/stderr in the target's `logs/` |
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
-| `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed; `include_secrets=true` stores verbatim |
+| `sec_evidence` | store/retrieve raw artifacts, SHA-256 indexed; stored verbatim by default, `include_secrets=false` redacts at capture |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
-| `sec_report` | preview or export as markdown, JSON, HTML or PDF into the run directory; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content, `redact=false` emits it verbatim |
+| `sec_report` | preview or export as markdown, JSON, HTML or PDF into the target's own `reports/`; `coverage=session` (default) stops one target's findings mixing into another's; `evidence=full` embeds artifact content; verbatim by default, `redact=true` scrubs |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is.
+
+## Credentials and disclosure
+
+The default posture is **full disclosure**. A leaked credential is often the
+finding itself, so it is recorded verbatim at capture and reproduced in full in a
+dedicated **Credentials** section of the report — one entry per value, with its
+type, host, the line it came from and where it was observed. Nothing is masked.
+
+- **Capture is verbatim.** `sec_evidence` and `sec_scan` store secret-like
+  material as-is unless you pass `include_secrets=false`.
+- **Reports are verbatim.** `sec_report` emits every text format unmasked unless
+  you pass `redact=true`.
+- **`redact=true`** replaces each collected value with `[REDACTED:credential]`,
+  and the shape rules scrub anything else that looks like a secret.
+
+This is a deliberate departure from the usual guidance. PTES Post-Exploitation
+says passwords "will not be included in the final report"; OWASP APTS
+(`APTS-MR-019`, `APTS-TP-013`) says plaintext credentials **MUST NOT** appear in
+reports. This build follows the Metasploit Credentials-Report model instead —
+values present in full — and treats the deliverable as credential-grade
+sensitive: every file is written `0600`, an unredacted report carries an
+`UNREDACTED` banner in md/html and `unredacted: true` in json, and the export is
+audited under `report.export.unredacted`. Rotate every disclosed value once the
+engagement closes.
+
+Redaction at the capture boundary is **irreversible**. A value stored with
+`include_secrets=false` cannot be recovered by regenerating the report: the
+record says `redacted: yes` and the secret is gone.
+
+## Report presentation
+
+Every export is stamped with the copyright mark
+`© @EliTechWiz 2026 All Rights Reserved`.
+
+- **Markdown and HTML** close with a footer carrying the copyright; the HTML
+  `<head>` names `EliTechWiz` as author and `NullByte` as generator.
+- **PDF** carries the copyright and `Page N of M` in the bottom margin of
+  *every* page. That footer comes from the `@page` margin boxes in the report
+  stylesheet, which both WeasyPrint and current Chrome render — so it survives
+  whichever converter is installed. If no converter is installed the PDF is
+  skipped with an install hint; the other three formats are still written.
 
 ## Posture
 
@@ -139,10 +215,13 @@ bind it to a public interface.
 
 - Connect scans only (no raw SYN/OS detection) — use the nmap adapter for that.
 - Redirects on `webfetch` are validated by the tool, not the guard.
-- Evidence is redacted before storage, so a stored artifact is not byte-exact when
-  it contained secrets — unless it was captured with `include_secrets=true`.
-- Redaction is best-effort pattern matching, not a guarantee. A report exported
-  with `redact=false` is a credential dump by design; treat it as one.
+- Evidence is stored verbatim by default, so a captured artifact is byte-exact.
+  Capturing with `include_secrets=false` redacts before storage and is
+  irreversible.
+- Redaction is best-effort pattern matching, not a guarantee. Reports are
+  verbatim by default by design — treat every export as credential-grade
+  sensitive. `redact=true` removes the shapes it knows; it cannot remove a secret
+  it does not recognise, and it cannot undo capture-time redaction.
 - CVSS is base score only (no temporal/environmental).
 
 ## Docs

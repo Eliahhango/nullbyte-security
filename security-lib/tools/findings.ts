@@ -54,7 +54,7 @@ export const secFinding = tool({
     "is required). Prefer supplying cvss_breakdown (the 8 CVSS 3.1 base metrics) over a hand-picked severity. " +
     CLOSURE_GUIDANCE +
     " Supply counterevidence and severity_change_conditions whenever you can — they are what make a finding reviewable. " +
-    "Evidence is redacted for secrets on write and evidence_refs are verified to exist. Duplicate findings are refused.",
+    "Evidence is stored verbatim (the posture is full disclosure) and evidence_refs are verified to exist. Duplicate findings are refused.",
   args: {
     action: tool.schema.enum(["create", "list", "get", "update"]).describe("operation to perform"),
     title: tool.schema.string().optional().describe("short, specific finding title (create)"),
@@ -70,7 +70,11 @@ export const secFinding = tool({
     cwe: tool.schema.string().optional().describe("CWE id if known, e.g. CWE-79 (create)"),
     confidence: tool.schema.enum(CONF).optional().describe("how strong the evidence is (create)"),
     verification: tool.schema.enum(VERIF).optional().describe("descriptive verification note; does NOT set status (create)"),
-    evidence: tool.schema.string().optional().describe("raw supporting evidence, redacted on write (create)"),
+    evidence: tool.schema.string().optional().describe("raw supporting evidence, stored verbatim (create)"),
+    redact_evidence: tool.schema
+      .boolean()
+      .optional()
+      .describe("scrub secret-like material from evidence/reproduction/counterevidence on write (default false — verbatim, irreversible)"),
     evidence_refs: tool.schema
       .array(tool.schema.string())
       .optional()
@@ -131,7 +135,7 @@ export const secFinding = tool({
         assumptions: args.assumptions,
         fix_effort: args.fix_effort,
       }
-      const res = createFinding(root, c.sessionID, input, { baseDir })
+      const res = createFinding(root, c.sessionID, input, { baseDir, redactEvidence: args.redact_evidence === true })
 
       if (res.duplicateOf) {
         const how = res.duplicateReason === "semantic" ? "likely duplicate (similar wording and surface)" : "duplicate"
@@ -227,6 +231,7 @@ export const secFinding = tool({
     const res = updateFinding(root, args.id, changes, args.reason, {
       expectedRevision: args.expected_revision,
       baseDir,
+      redactEvidence: args.redact_evidence === true,
     })
     if (res.conflict) {
       return `update refused: ${res.problems.join("; ")}\ncurrent: revision ${res.current?.revision}, closure ${res.current?.closure}, status ${res.current?.status}`

@@ -101,7 +101,7 @@ export const FRAGMENTS: Fragment[] = [
     tags: ["evidence", "process"],
     body: [
       "Store raw supporting output with sec_evidence before citing it; findings reference evidence ids.",
-      "Evidence is redacted for credentials and tokens on write. If a leaked secret is itself the finding, describe its location and type in the finding text instead of pasting the live value.",
+      "Evidence is kept verbatim: the posture is full disclosure, so a leaked credential quoted in a finding or an artifact is preserved and reproduced in the report's Credentials section. Pass include_secrets=false / redactEvidence only when a specific deliverable must not carry it.",
       "Keep evidence minimal and relevant: the request/response pair or the exact tool output that demonstrates the issue.",
       "Evidence records carry a SHA-256 so a reviewer can confirm nothing changed after collection.",
     ].join("\n"),

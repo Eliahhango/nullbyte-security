@@ -12,7 +12,7 @@
 
 import { hostFromUrl } from "./netsafe.ts"
 import type { EvidenceRecord } from "./evidence.ts"
-import type { Finding } from "./types.ts"
+import type { AuditRecord, Finding } from "./types.ts"
 
 export interface SelectionOptions {
   /** keep only records written by this scan session */
@@ -59,6 +59,28 @@ function keepHost(host: string | null, opts: SelectionOptions): boolean {
   if (opts.host && host !== opts.host.toLowerCase()) return false
   if (opts.isAuthorized && host && !opts.isAuthorized(host)) return false
   return true
+}
+
+/**
+ * Hosts a session actually contacted, taken from the audit trail.
+ *
+ * Findings are not a reliable proxy for "what did this session touch": a session
+ * can contact a target and produce no findings at all. Every allow decision is
+ * recorded with its targets, so the audit log is the authoritative answer — and
+ * it is what lets a report with nothing in it still be filed under the target it
+ * was actually about.
+ */
+export function sessionHosts(records: AuditRecord[], sessionID: string): string[] {
+  const hosts = new Set<string>()
+  for (const r of records) {
+    if (r.sessionID !== sessionID) continue
+    if (r.decision !== "allow") continue
+    for (const t of r.targets ?? []) {
+      const h = hostOf(t)
+      if (h) hosts.add(h)
+    }
+  }
+  return [...hosts].sort()
 }
 
 /**

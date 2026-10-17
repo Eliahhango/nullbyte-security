@@ -160,6 +160,12 @@ export interface PluginPolicy {
   inject_permission_rules: boolean
   /** additionally prompt for intrusive scanners — off by default so non-interactive runs never stall */
   ask_intrusive_commands: boolean
+  /**
+   * Give each contacted target its own directory in the project root, holding
+   * the reports and any raw scanner logs (default true). Off falls back to the
+   * single flat engagement directory.
+   */
+  target_dirs: boolean
 }
 
 export function loadPluginPolicy(): PluginPolicy {
@@ -168,6 +174,7 @@ export function loadPluginPolicy(): PluginPolicy {
     protect_local_secrets: true,
     inject_permission_rules: true,
     ask_intrusive_commands: false,
+    target_dirs: true,
   }
   const path = globalPolicyPath()
   if (!existsSync(path)) return policy
@@ -180,6 +187,7 @@ export function loadPluginPolicy(): PluginPolicy {
   if (typeof p.protect_local_secrets === "boolean") policy.protect_local_secrets = p.protect_local_secrets
   if (typeof p.inject_permission_rules === "boolean") policy.inject_permission_rules = p.inject_permission_rules
   if (typeof p.ask_intrusive_commands === "boolean") policy.ask_intrusive_commands = p.ask_intrusive_commands
+  if (typeof p.target_dirs === "boolean") policy.target_dirs = p.target_dirs
   return policy
 }
 

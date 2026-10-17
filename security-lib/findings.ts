@@ -221,6 +221,13 @@ export function validateFindingInput(input: Partial<FindingInput>): ValidationRe
 export interface CreateOptions {
   /** project directory that relative evidence references resolve against */
   baseDir?: string
+  /**
+   * Scrub secret-like material from `evidence`, `reproduction` and
+   * `counterevidence` on write. Defaults to false: the posture is full
+   * disclosure, and a finding that quotes a leaked credential must keep it so
+   * the report can reproduce it. Irreversible once written.
+   */
+  redactEvidence?: boolean
 }
 
 export interface CreateResult {
@@ -295,12 +302,13 @@ export function createFinding(root: string, sessionID: string, input: FindingInp
     cvss_vector = cvss.vector
   }
 
+  const scrub = (s: string | undefined) => (s && opts.redactEvidence ? redactSecrets(s) : s)
   const now = new Date().toISOString()
   const finding: Finding = {
     ...input,
-    evidence: redactSecrets(input.evidence),
-    reproduction: input.reproduction ? redactSecrets(input.reproduction) : undefined,
-    counterevidence: input.counterevidence ? redactSecrets(input.counterevidence) : undefined,
+    evidence: scrub(input.evidence),
+    reproduction: scrub(input.reproduction),
+    counterevidence: scrub(input.counterevidence),
     id: `F-${randomUUID().slice(0, 8)}`,
     sessionID,
     created_at: now,
@@ -372,6 +380,8 @@ export interface UpdateOptions {
   /** optimistic concurrency: refuse the write if the stored revision differs */
   expectedRevision?: number
   baseDir?: string
+  /** scrub secret-like material from the updated fields; defaults to false */
+  redactEvidence?: boolean
 }
 
 /**
@@ -418,12 +428,12 @@ export function updateFinding(
   if (changes.limitations !== undefined) { next.limitations = changes.limitations; applied = true }
   if (changes.confidence !== undefined) { next.confidence = changes.confidence; applied = true }
   if (changes.verification !== undefined) { next.verification = changes.verification; applied = true }
-  if (changes.counterevidence !== undefined) { next.counterevidence = redactSecrets(changes.counterevidence); applied = true }
+  if (changes.counterevidence !== undefined) { next.counterevidence = opts.redactEvidence ? redactSecrets(changes.counterevidence) : changes.counterevidence; applied = true }
   if (changes.severity_change_conditions !== undefined) { next.severity_change_conditions = changes.severity_change_conditions; applied = true }
   if (changes.assumptions !== undefined) { next.assumptions = changes.assumptions; applied = true }
   if (changes.fix_effort !== undefined) { next.fix_effort = changes.fix_effort; applied = true }
-  if (changes.evidence !== undefined) { next.evidence = redactSecrets(changes.evidence); applied = true }
-  if (changes.reproduction !== undefined) { next.reproduction = redactSecrets(changes.reproduction); applied = true }
+  if (changes.evidence !== undefined) { next.evidence = opts.redactEvidence ? redactSecrets(changes.evidence) : changes.evidence; applied = true }
+  if (changes.reproduction !== undefined) { next.reproduction = opts.redactEvidence ? redactSecrets(changes.reproduction) : changes.reproduction; applied = true }
   if (changes.demonstrated_by !== undefined) { next.demonstrated_by = changes.demonstrated_by; applied = true }
   if (changes.ruled_out_by !== undefined) { next.ruled_out_by = changes.ruled_out_by; applied = true }
   if (changes.ruled_out_at !== undefined) { next.ruled_out_at = changes.ruled_out_at; applied = true }

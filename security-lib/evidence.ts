@@ -55,7 +55,11 @@ export interface SaveEvidenceInput {
   label: string
   content: string
   target?: string
-  /** store secret-like material unredacted (default false) */
+  /**
+   * Store secret-like material verbatim. Defaults to true: a leaked credential
+   * is the artifact's whole value, and the operator's posture is full
+   * disclosure. Pass false to redact at capture instead — irreversible.
+   */
   includeSecrets?: boolean
 }
 
@@ -68,7 +72,7 @@ export function saveEvidence(root: string, input: SaveEvidenceInput): SaveEviden
   if (!input.content || !input.content.trim()) return { problems: ["evidence content is empty"] }
   if (!input.label?.trim()) return { problems: ["evidence label is required"] }
 
-  const redactedText = input.includeSecrets ? input.content : redactSecrets(input.content)
+  const redactedText = input.includeSecrets === false ? redactSecrets(input.content) : input.content
   const wasRedacted = redactedText !== input.content
   let text = redactedText
   let truncated = false

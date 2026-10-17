@@ -25,6 +25,13 @@ export interface PdfConverter {
   argv(htmlPath: string, pdfPath: string, profileDir: string): string[]
 }
 
+/**
+ * The copyright line stamped into the bottom of every page of every deliverable.
+ * It reaches the PDF through the CSS `@page` margin boxes in `report.ts`, which
+ * both WeasyPrint and current Chrome render.
+ */
+export const COPYRIGHT_TEXT = "© @EliTechWiz 2026 All Rights Reserved"
+
 function which(bin: string): string | undefined {
   const r = spawnSync("sh", ["-c", `command -v ${JSON.stringify(bin)}`], { encoding: "utf8", timeout: 4000 })
   const p = (r.stdout ?? "").trim().split("\n")[0]
@@ -32,9 +39,10 @@ function which(bin: string): string | undefined {
 }
 
 /**
- * Priority order. weasyprint first: purpose-built HTML->PDF renderer with real
- * print CSS and no browser sandbox to fight. Chrome is the fallback and needs a
- * throwaway profile + no-sandbox to run headless as root.
+ * Priority order. weasyprint first: purpose-built HTML->PDF renderer with full
+ * print CSS and no browser sandbox to fight. Chrome is the fallback; it needs a
+ * throwaway profile and `--no-sandbox` to run headless as root, and it renders
+ * the report's `@page` margin boxes, so the per-page footer survives.
  */
 const CANDIDATES: Omit<PdfConverter, "path">[] = [
   {

@@ -33,6 +33,16 @@ export interface RunOptions {
   timeoutMs?: number
   maxOutputBytes?: number
   cwd?: string
+  /**
+   * Return stdout/stderr verbatim. Defaults to true: the operator's standing
+   * posture is full disclosure, so scanner output that carries a leaked
+   * credential is kept verbatim and the report can show it.
+   *
+   * Redaction happens HERE, at the capture boundary, so it cannot be undone
+   * downstream. Pass false only to suppress secret-like material from this run;
+   * an artifact redacted here can never be recovered by a later report.
+   */
+  includeSecrets?: boolean
 }
 
 /** Run an argv vector with a hard timeout and output caps. No shell involved. */
@@ -84,8 +94,8 @@ export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Pro
         ok: exitCode === 0 && !timedOut,
         command: printable,
         exitCode,
-        stdout: redactSecrets(stdout),
-        stderr: redactSecrets(stderr),
+        stdout: opts.includeSecrets === false ? redactSecrets(stdout) : stdout,
+        stderr: opts.includeSecrets === false ? redactSecrets(stderr) : stderr,
         durationMs: Date.now() - started,
         timedOut,
         truncated,
@@ -190,7 +200,7 @@ export async function runNmap(
   opts: RunOptions = {},
 ): Promise<{ run: ScanRunResult; result?: NmapResult }> {
   const args = buildNmapArgs(host, profile, ports)
-  const run = await runArgv(bin, args, { timeoutMs: opts.timeoutMs ?? 300000 })
+  const run = await runArgv(bin, args, { timeoutMs: opts.timeoutMs ?? 300000, includeSecrets: opts.includeSecrets })
   if (!run.stdout.trim()) return { run }
   return { run, result: parseNmapXml(run.stdout) }
 }

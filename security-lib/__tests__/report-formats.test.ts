@@ -9,9 +9,9 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs"
 import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { renderHtml, writeReport, ALL_FORMATS, type ReportInput } from "../report.ts"
+import { renderHtml, renderMarkdown, writeReport, ALL_FORMATS, type ReportInput } from "../report.ts"
 import { createFinding, readAllFindings } from "../findings.ts"
-import { findPdfConverter, htmlToPdf, pdfCapabilityLine } from "../pdf.ts"
+import { findPdfConverter, htmlToPdf, pdfCapabilityLine, COPYRIGHT_TEXT } from "../pdf.ts"
 import type { FindingInput } from "../types.ts"
 
 const tmp = () => mkdtempSync(join(tmpdir(), "nb-report-"))
@@ -110,6 +110,75 @@ test("html carries the closure summary and limitations", () => {
   const html = renderHtml(input())
   assert.match(html, /Closure:/)
   assert.match(html, /Only the \/search endpoint was tested\./)
+})
+
+/* ----------------------------------------------------- copyright / footer --- */
+
+test("html declares NullByte as the generator and EliTechWiz as the author", () => {
+  const html = renderHtml(input())
+  assert.match(html, /<meta name="author" content="EliTechWiz">/)
+  assert.match(html, /<meta name="generator" content="NullByte">/)
+})
+
+test("html stamps the copyright and page counters into the @page margin boxes", () => {
+  const html = renderHtml(input())
+  // the per-page footer is driven by print CSS, so it must be in the stylesheet
+  assert.match(html, /@page\s*\{[^}]*@bottom-left/s)
+  assert.match(html, /@bottom-left\s*\{\s*content:\s*"[^"]*EliTechWiz 2026 All Rights Reserved"/)
+  assert.match(html, /@bottom-right\s*\{\s*content:\s*"Page\s+"\s*counter\(page\)\s*" of "\s*counter\(pages\)/)
+})
+
+test("html body footer repeats the copyright", () => {
+  const html = renderHtml(input())
+  assert.match(html, /<div class="copyright">© @EliTechWiz 2026 All Rights Reserved<\/div>/)
+})
+
+test("markdown ends with the copyright line", () => {
+  const md = renderMarkdown(input())
+  assert.ok(md.trimEnd().endsWith(COPYRIGHT_TEXT), "markdown must close with the copyright")
+})
+
+test("COPYRIGHT_TEXT is the exact mark required on every page", () => {
+  assert.equal(COPYRIGHT_TEXT, "© @EliTechWiz 2026 All Rights Reserved")
+})
+
+test("pdf stamps the copyright and a page number onto every page", (t) => {
+  if (!findPdfConverter()) return t.skip("no PDF converter installed")
+  const probe = spawnSync("pdftotext", ["-v"], { encoding: "utf8" })
+  if (probe.error) return t.skip("pdftotext not installed")
+
+  // enough findings to force a multi-page render
+  const findings = Array.from({ length: 6 }, (_, i) => ({
+    ...createFinding(tmp(), "s1", {
+      ...baseFinding,
+      title: `Finding ${i + 1}`,
+      description: "padding ".repeat(120),
+      impact: "padding ".repeat(80),
+    }).finding!,
+  }))
+
+  const out = join(tmp(), "paged.pdf")
+  const res = htmlToPdf(renderHtml(input({ findings })), out)
+  assert.equal(res.ok, true, (res as any).reason)
+
+  const text = spawnSync("pdftotext", ["-layout", out, "-"], { encoding: "utf8" }).stdout ?? ""
+  const markers = [...text.matchAll(/Page (\d+) of (\d+)/g)]
+  assert.ok(markers.length >= 2, `expected a multi-page PDF, saw ${markers.length} page markers`)
+
+  const total = Number(markers[0][2])
+  // every page 1..N is numbered exactly once, in order
+  assert.deepEqual(
+    markers.map((m) => Number(m[1])),
+    Array.from({ length: total }, (_, i) => i + 1),
+  )
+  // ...and every one of those pages carries the copyright next to its number
+  const lines = text.split("\n").filter((l) => /Page \d+ of \d+/.test(l))
+  for (const line of lines) {
+    assert.match(line, /EliTechWiz 2026 All Rights Reserved/, `footer line missing copyright: ${line}`)
+  }
+  // the copyright must not be rendered twice per page
+  const copies = text.split(COPYRIGHT_TEXT).length - 1
+  assert.ok(copies <= total + 1, `copyright duplicated: ${copies} copies across ${total} pages`)
 })
 
 /* ------------------------------------------------------------------ pdf --- */

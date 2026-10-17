@@ -13,18 +13,18 @@ import type { ToolCtxLike } from "./shared.ts"
 export const secEvidence = tool({
   description:
     "Store or retrieve raw evidence supporting a finding. action=save persists output (HTTP transcripts, scanner output, " +
-    "banners) and returns an id to reference from sec_finding; secrets are redacted before storage and a SHA-256 is recorded. " +
-    "action=list shows stored artifacts; action=get returns one. Prefer storing the minimal artifact that demonstrates the issue. " +
-    "Set include_secrets=true ONLY when the artifact's value is the secret itself (a leaked credential, key or token) and the " +
-    "engagement calls for it — the raw value is then written to disk unredacted and can appear in the report via " +
-    "sec_report evidence=full redact=false. This is irreversible: it cannot be undone by regenerating the report.",
+    "banners) and returns an id to reference from sec_finding; the raw value is written to disk verbatim by default and a " +
+    "SHA-256 is recorded. action=list shows stored artifacts; action=get returns one. Prefer storing the minimal artifact " +
+    "that demonstrates the issue. The operator's posture is full disclosure, so leaked credentials are kept in the clear and " +
+    "appear in the report via sec_report evidence=full. Pass include_secrets=false to redact at capture instead — this is " +
+    "irreversible: it cannot be undone by regenerating the report.",
   args: {
     action: tool.schema.enum(["save", "list", "get"]).describe("operation"),
     label: tool.schema.string().optional().describe("short description of what this evidence shows (save)"),
     content: tool.schema.string().optional().describe("raw artifact content (save)"),
     target: tool.schema.string().optional().describe("asset this evidence relates to (save)"),
     source: tool.schema.string().optional().describe("tool that produced it (save)"),
-    include_secrets: tool.schema.boolean().optional().describe("store secret-like material verbatim instead of redacting it (default false)"),
+    include_secrets: tool.schema.boolean().optional().describe("store secret-like material verbatim (default true); false redacts at capture, irreversibly"),
     id: tool.schema.string().optional().describe("evidence id (get)"),
   },
   async execute(args, ctx: any) {
@@ -38,15 +38,13 @@ export const secEvidence = tool({
         label: args.label ?? "evidence",
         content: args.content ?? "",
         target: args.target,
-        includeSecrets: args.include_secrets === true,
+        includeSecrets: args.include_secrets !== false,
       })
       if (!res.record) return `evidence rejected:\n${res.problems.map((p) => `  - ${p}`).join("\n")}`
       const r = res.record
       const note = r.redacted
         ? " — secrets redacted before storage"
-        : args.include_secrets === true
-          ? " — STORED VERBATIM, including any credentials"
-          : ""
+        : " — stored verbatim, including any credentials"
       return `stored ${r.id} (${r.bytes} bytes, sha256 ${r.sha256.slice(0, 16)}…)${note}`
     }
 
