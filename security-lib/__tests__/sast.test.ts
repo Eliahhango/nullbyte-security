@@ -69,6 +69,23 @@ test("redaction covers assignments, bearer tokens and url userinfo", () => {
   assert.doesNotMatch(redactSecrets('password = "hunter2hunter2"'), /hunter2hunter2/)
 })
 
+test("redaction catches prefixed credential keys — the shapes a leaked .env uses", () => {
+  // `_` is a word character, so a bare \b never matched `db_password`. These are
+  // the most common credential lines in a leaked environment file.
+  for (const line of [
+    "db_password: S3cr3tPr0d!Pass",
+    "mysql_pwd=supersecretvalue",
+    "DB_PASSWORD=supersecretvalue",
+    "client_secret=abcdef123456",
+    "app_api_key=abcdef123456",
+    "my_access_token=abcdef123456",
+  ]) {
+    const out = redactSecrets(line)
+    assert.match(out, /REDACTED/, `not redacted: ${line}`)
+    assert.doesNotMatch(out, /supersecretvalue|S3cr3tPr0d|abcdef123456/, `value survived: ${line}`)
+  }
+})
+
 test("redactAndTruncate keeps head and tail and is bounded", () => {
   const big = `HEAD${"x".repeat(50000)}TAIL`
   const out = redactAndTruncate(big, 1024)

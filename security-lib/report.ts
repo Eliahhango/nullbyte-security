@@ -7,7 +7,7 @@
  * evidence references, and explicit limitations / untested areas.
  */
 
-import { writeFileSync } from "node:fs"
+import { chmodSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { ensureDir } from "./paths.ts"
 import { htmlToPdf } from "./pdf.ts"
@@ -22,6 +22,10 @@ export interface ReportInput {
   sessionID: string
   findings: Finding[]
   evidence: EvidenceRecord[]
+  /** id -> raw artifact text, when the caller asked for full evidence */
+  evidenceContent?: Record<string, string>
+  /** true when redaction was deliberately skipped — adds a warning banner */
+  unredacted?: boolean
   limitations?: string
   generatedAt?: string
   /** tool/agent provenance for the report header */
@@ -35,6 +39,21 @@ const SEV_LABEL: Record<Severity, string> = {
   low: "Low",
   info: "Info",
 }
+
+/**
+ * Emitted when the caller deliberately disabled redaction. The report is a
+ * credential dump at that point; anyone holding the file can use what is in it.
+ */
+const UNREDACTED_WARNING =
+  "UNREDACTED — this report contains live secrets (credentials, tokens, keys) exactly as captured. " +
+  "It is a sensitive deliverable: restrict distribution, do not commit it to version control, and rotate " +
+  "every credential it discloses once the engagement closes."
+
+const UNREDACTED_BANNER_MD = [
+  "> [!WARNING]",
+  `> **${UNREDACTED_WARNING}**`,
+  "",
+]
 
 function esc(s: string | undefined): string {
   if (!s) return "_(not recorded)_"
@@ -53,6 +72,7 @@ export function renderMarkdown(input: ReportInput): string {
   if (input.provenance) lines.push(`- Produced by: ${input.provenance}`)
   lines.push(`- Findings: ${input.findings.length}`)
   lines.push("")
+  if (input.unredacted) lines.push(...UNREDACTED_BANNER_MD)
 
   lines.push("## Authorized scope")
   lines.push("")
@@ -192,6 +212,36 @@ export function renderMarkdown(input: ReportInput): string {
   }
   lines.push("")
 
+  if (input.evidenceContent && input.evidence.length > 0) {
+    lines.push("## Evidence artifacts")
+    lines.push("")
+    lines.push(
+      "Full content of every stored artifact, as captured. Where an artifact is marked `redacted: yes` above, " +
+        "the secret-like material was removed at capture time and cannot be recovered from this report.",
+    )
+    lines.push("")
+    for (const e of input.evidence) {
+      lines.push(`### ${e.id} — ${e.label}`)
+      lines.push("")
+      lines.push(`- **Source:** ${e.source}`)
+      if (e.target) lines.push(`- **Target:** ${e.target}`)
+      lines.push(`- **Captured:** ${e.created_at}`)
+      lines.push(`- **Bytes:** ${e.bytes}`)
+      lines.push(`- **Redacted at capture:** ${e.redacted ? "yes" : "no"}`)
+      lines.push(`- **SHA-256:** \`${e.sha256}\``)
+      lines.push("")
+      const body = input.evidenceContent[e.id]
+      if (body === undefined) {
+        lines.push("_(artifact file is missing from the evidence store)_")
+      } else {
+        lines.push("```")
+        lines.push(esc(body))
+        lines.push("```")
+      }
+      lines.push("")
+    }
+  }
+
   lines.push("## Limitations and untested areas")
   lines.push("")
   lines.push(esc(input.limitations ?? "No limitations were recorded by the operator."))
@@ -211,11 +261,23 @@ export function renderJson(input: ReportInput): string {
       generated_at: input.generatedAt ?? new Date().toISOString(),
       session: input.sessionID,
       provenance: input.provenance,
+      unredacted: input.unredacted ?? false,
       scope: input.scopeSummary,
       summary: severitySummary(input.findings),
       closure_summary: closureSummary(input.findings),
       findings: input.findings,
       evidence: input.evidence,
+      evidence_artifacts: input.evidenceContent
+        ? input.evidence.map((e) => ({
+            id: e.id,
+            label: e.label,
+            source: e.source,
+            target: e.target ?? null,
+            redacted_at_capture: e.redacted,
+            sha256: e.sha256,
+            content: input.evidenceContent?.[e.id] ?? null,
+          }))
+        : undefined,
       limitations: input.limitations ?? null,
     },
     null,
@@ -326,6 +388,33 @@ ${refs}
         .join("")}</tbody></table>`
     : "<p><em>No raw evidence artifacts were stored.</em></p>"
 
+  const evidenceArtifactsHtml =
+    input.evidenceContent && input.evidence.length
+      ? `<h2>Evidence artifacts</h2>
+<p>Full content of every stored artifact, as captured. Where an artifact is marked <code>redacted: yes</code> above, the secret-like material was removed at capture time and cannot be recovered from this report.</p>
+${input.evidence
+  .map((e) => {
+    const body = input.evidenceContent?.[e.id]
+    return `<article class="finding">
+<h2><code>${escHtml(e.id)}</code> ${escHtml(e.label)}</h2>
+<div class="meta">
+  <div><span class="k">Source</span><span class="v">${escHtml(e.source)}</span></div>
+  ${e.target ? `<div><span class="k">Target</span><span class="v">${escHtml(e.target)}</span></div>` : ""}
+  <div><span class="k">Captured</span><span class="v">${escHtml(e.created_at)}</span></div>
+  <div><span class="k">Bytes</span><span class="v">${e.bytes}</span></div>
+  <div><span class="k">Redacted at capture</span><span class="v">${e.redacted ? "yes" : "no"}</span></div>
+  <div><span class="k">SHA-256</span><span class="v"><code>${escHtml(e.sha256)}</code></span></div>
+</div>
+${
+  body === undefined
+    ? "<p><em>(artifact file is missing from the evidence store)</em></p>"
+    : `<pre>${escHtml(body)}</pre>`
+}
+</article>`
+  })
+  .join("\n")}`
+      : ""
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -357,6 +446,7 @@ ${refs}
   .sev-low      { border-left-color: #2b6cb0; } .sev-low .badge      { background: #2b6cb0; }
   .sev-info     { border-left-color: #666; }    .sev-info .badge     { background: #666; }
   footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+  .warn { border: 2px solid #b00020; background: #fff5f5; color: #7a0015; border-radius: 5px; padding: 12px 14px; margin: 0 0 20px; font-weight: 600; }
   @media print { body { padding: 0; } .finding { page-break-inside: avoid; } }
 </style>
 </head>
@@ -368,6 +458,7 @@ ${refs}
   <span>Findings: ${input.findings.length}</span>
 </div>
 ${input.provenance ? `<p class="sub">Produced by: ${escHtml(input.provenance)}</p>` : ""}
+${input.unredacted ? `<div class="warn">${escHtml(UNREDACTED_WARNING)}</div>` : ""}
 
 <h2>Authorized scope</h2>
 <pre>${escHtml(input.scopeSummary)}</pre>
@@ -387,6 +478,7 @@ ${input.findings.length === 0 ? "<p>No findings were recorded. This is not evide
 
 <h2>Evidence index</h2>
 ${evidenceHtml}
+${evidenceArtifactsHtml}
 
 <h2>Limitations and untested areas</h2>
 <p>${escHtml(input.limitations ?? "No limitations were recorded by the operator.")}</p>
@@ -410,6 +502,12 @@ export interface WriteReportOptions {
   formats?: ReportFormat[]
   /** directory to write into; defaults to `<root>/reports` */
   outDir?: string
+  /**
+   * Redact secret-like material from every text format. Defaults to true.
+   * Set false only when the operator has explicitly asked for an unredacted
+   * deliverable — the artifacts then contain live credentials verbatim.
+   */
+  redact?: boolean
 }
 
 export interface WrittenFile {
@@ -429,17 +527,22 @@ export interface WriteReportResult {
 }
 
 /**
- * Write the report. Every emitted artifact is redacted first — including the
- * HTML that feeds the PDF — so a secret in a finding cannot reach a deliverable.
+ * Write the report. Every emitted text artifact is redacted first — including
+ * the HTML that feeds the PDF — so a secret in a finding cannot reach a
+ * deliverable. Pass `redact: false` to emit the raw content instead; the
+ * artifacts are then a credential dump and are marked as such.
  */
 export function writeReport(root: string, input: ReportInput, opts: WriteReportOptions = {}): WriteReportResult {
   const dir = ensureDir(opts.outDir ?? join(root, "reports"))
   const stamp = (input.generatedAt ?? new Date().toISOString()).replace(/[:.]/g, "-")
   const base = (opts.name ?? `report-${stamp}`).replace(/[^A-Za-z0-9._-]/g, "_")
   const formats = opts.formats?.length ? opts.formats : ALL_FORMATS
+  const redact = opts.redact !== false
+  const clean = (s: string) => (redact ? redactSecrets(s) : s)
 
-  const markdown = redactSecrets(renderMarkdown(input))
-  const html = redactSecrets(renderHtml(input))
+  const markdown = clean(renderMarkdown(input))
+  const html = clean(renderHtml(input))
+  const json = clean(renderJson(input))
   const files: WrittenFile[] = []
   const out: WriteReportResult = { dir, files, markdown, html }
 
@@ -451,14 +554,23 @@ export function writeReport(root: string, input: ReportInput, opts: WriteReportO
   }
 
   emit("md", "md", markdown)
-  emit("json", "json", renderJson(input))
+  emit("json", "json", json)
   emit("html", "html", html)
 
   if (formats.includes("pdf")) {
     const pdfPath = join(dir, `${base}.pdf`)
     const res = htmlToPdf(html, pdfPath)
     out.pdf = res.ok ? { ok: true } : { ok: false, reason: res.reason, hint: res.hint }
-    if (res.ok) files.push({ format: "pdf", path: pdfPath })
+    if (res.ok) {
+      // the converter writes with its own umask; an unredacted report is the
+      // most sensitive file in the tree, so force owner-only
+      try {
+        chmodSync(pdfPath, 0o600)
+      } catch {
+        /* best effort — the file is already written */
+      }
+      files.push({ format: "pdf", path: pdfPath })
+    }
   }
 
   out.markdownPath = files.find((f) => f.format === "md")?.path

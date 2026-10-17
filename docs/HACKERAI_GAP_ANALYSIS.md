@@ -50,7 +50,7 @@ weaken us or violate a constraint).
 | 19 | Trigger.dev background jobs | `trigger/` | N/A | **N/A** | deployment model |
 | 20 | E2B sandbox execution | `lib/` sandbox client | N/A | **N/A** | we run locally by design |
 | 21 | LLM-based semantic dedupe | model call per finding | — | **Rejected** | adds a model call and non-determinism to a guardrail; Jaccard is auditable |
-| 22 | Second reasoning engine / orchestrator | HackerAI's own agent loop | — | **Rejected** | we use OpenCode's runtime; a competing engine is out of scope |
+| 22 | Second reasoning engine / orchestrator | HackerAI's own agent loop | — | **Rejected** | we use NullByte's runtime; a competing engine is out of scope |
 | 23 | Hosted multi-user permission model | per-user accounts | — | **Rejected** | our operator *is* the authorizer |
 
 ## 3. Bugs this audit found in our own code

@@ -1,7 +1,7 @@
 /**
  * Shared types for the NullByte security capability layer.
  * Pure types + tiny helpers only; no runtime dependencies so this module is
- * importable from both the OpenCode (Bun) plugin runtime and Node's test runner.
+ * importable from both the NullByte (Bun) plugin runtime and Node's test runner.
  */
 
 export type Intensity = "passive" | "safe-active" | "intrusive" | "exploit"

@@ -1,7 +1,7 @@
 /**
  * The enforcement hook (`tool.execute.before`).
  *
- * Verified against the OpenCode runtime: this hook is awaited *inside* the tool
+ * Verified against the NullByte runtime: this hook is awaited *inside* the tool
  * executor, so throwing here aborts the call before the tool body runs. That
  * makes scope and policy enforcement a property of the execution path rather
  * than a promise made in a system prompt.
@@ -12,7 +12,7 @@
  *   - read/write/edit: refusal to touch local credential stores
  *   - everything: audit record
  *
- * Interactive approval for intrusive operations is delegated to OpenCode's own
+ * Interactive approval for intrusive operations is delegated to NullByte's own
  * permission system (rules injected by the plugin's `config` hook, and
  * `ToolContext.ask()` inside the sec_* tools) so the native model is preserved.
  */
@@ -263,7 +263,7 @@ export function parseTargetToken(raw: string): Target | null {
 }
 
 /**
- * Native permission rules injected into OpenCode's own permission model.
+ * Native permission rules injected into NullByte's own permission model.
  *
  * DENY rules are always safe to inject: they are defence in depth for the same
  * destructive patterns the guard already refuses.

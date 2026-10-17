@@ -38,10 +38,13 @@ const RULES: Rule[] = [
   { name: "google-api", re: /\bAIza[0-9A-Za-z_\-]{30,}\b/g, replace: () => "[REDACTED:google-api-key]" },
   { name: "jwt", re: /\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b/g, replace: () => "[REDACTED:jwt]" },
   { name: "npm", re: /\bnpm_[A-Za-z0-9]{30,}\b/g, replace: () => "[REDACTED:npm-token]" },
-  // key=value / key: value credential assignments
+  // key=value / key: value credential assignments. The leading prefix group is
+  // deliberate: `db_password`, `mysql_pwd`, `client_secret` are the common
+  // shapes in a leaked .env, and a plain \b would never match them because `_`
+  // is a word character.
   {
     name: "assignment",
-    re: /\b(api[_-]?key|apikey|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|passwd|pwd|private[_-]?key)\b\s*[:=]\s*("[^"\n]{6,}"|'[^'\n]{6,}'|[^\s,;"'\n]{6,})/gi,
+    re: /\b[A-Za-z0-9_-]*(api[_-]?key|apikey|secret|client[_-]?secret|access[_-]?token|refresh[_-]?token|auth[_-]?token|password|passwd|pwd|private[_-]?key)\b\s*[:=]\s*("[^"\n]{6,}"|'[^'\n]{6,}'|[^\s,;"'\n]{6,})/gi,
     replace: (m) => {
       const sep = m.includes(":") && !m.includes("=") ? ": " : "="
       const key = m.split(/[:=]/)[0].trim()

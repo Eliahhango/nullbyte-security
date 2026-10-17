@@ -1,6 +1,8 @@
 /**
  * sec_evidence — persist and retrieve raw supporting artifacts.
- * Content is redacted for secrets before it touches disk.
+ * Content is redacted for secrets before it touches disk unless the caller
+ * explicitly opts out with include_secrets, for artifacts whose value is the
+ * secret itself.
  */
 
 import { tool } from "@opencode-ai/plugin"
@@ -12,13 +14,17 @@ export const secEvidence = tool({
   description:
     "Store or retrieve raw evidence supporting a finding. action=save persists output (HTTP transcripts, scanner output, " +
     "banners) and returns an id to reference from sec_finding; secrets are redacted before storage and a SHA-256 is recorded. " +
-    "action=list shows stored artifacts; action=get returns one. Prefer storing the minimal artifact that demonstrates the issue.",
+    "action=list shows stored artifacts; action=get returns one. Prefer storing the minimal artifact that demonstrates the issue. " +
+    "Set include_secrets=true ONLY when the artifact's value is the secret itself (a leaked credential, key or token) and the " +
+    "engagement calls for it — the raw value is then written to disk unredacted and can appear in the report via " +
+    "sec_report evidence=full redact=false. This is irreversible: it cannot be undone by regenerating the report.",
   args: {
     action: tool.schema.enum(["save", "list", "get"]).describe("operation"),
     label: tool.schema.string().optional().describe("short description of what this evidence shows (save)"),
     content: tool.schema.string().optional().describe("raw artifact content (save)"),
     target: tool.schema.string().optional().describe("asset this evidence relates to (save)"),
     source: tool.schema.string().optional().describe("tool that produced it (save)"),
+    include_secrets: tool.schema.boolean().optional().describe("store secret-like material verbatim instead of redacting it (default false)"),
     id: tool.schema.string().optional().describe("evidence id (get)"),
   },
   async execute(args, ctx: any) {
@@ -32,10 +38,16 @@ export const secEvidence = tool({
         label: args.label ?? "evidence",
         content: args.content ?? "",
         target: args.target,
+        includeSecrets: args.include_secrets === true,
       })
       if (!res.record) return `evidence rejected:\n${res.problems.map((p) => `  - ${p}`).join("\n")}`
       const r = res.record
-      return `stored ${r.id} (${r.bytes} bytes, sha256 ${r.sha256.slice(0, 16)}…)${r.redacted ? " — secrets redacted before storage" : ""}`
+      const note = r.redacted
+        ? " — secrets redacted before storage"
+        : args.include_secrets === true
+          ? " — STORED VERBATIM, including any credentials"
+          : ""
+      return `stored ${r.id} (${r.bytes} bytes, sha256 ${r.sha256.slice(0, 16)}…)${note}`
     }
 
     if (args.action === "list") {

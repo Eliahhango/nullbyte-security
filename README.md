@@ -1,7 +1,7 @@
 # nullbyte-security
 
-Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI
-(an OpenCode-based terminal agent). Adds an agentic pentesting toolset — scope
+Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI,
+a terminal agent. Adds an agentic pentesting toolset — scope
 enforcement, recon, port scanning, scanner orchestration, secret scanning,
 evidence handling, CVSS-scored findings and reporting — as a **plugin**, without
 touching the host CLI.
@@ -34,9 +34,9 @@ install. Verify with `npm test`.
 | `sec_ports` | bounded TCP connect scan + banner grab |
 | `sec_scan` | adapters: nmap, nuclei, nikto, whatweb, sslscan, sqlmap |
 | `sec_sast` | local: `secrets`, `smells`, `deps` — secrets reported by location, never by value |
-| `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed |
+| `sec_evidence` | store/retrieve raw artifacts, redacted on write, SHA-256 indexed; `include_secrets=true` stores verbatim |
 | `sec_finding` | findings; status derived, never asserted; closure gate; CVSS 3.1 severity; dedupe; evidence-reference checks |
-| `sec_report` | preview or export as markdown, JSON, HTML or PDF, written to the directory the agent was run in |
+| `sec_report` | preview or export as markdown, JSON, HTML or PDF, written to the directory the agent was run in; `evidence=full` embeds artifact content, `redact=false` emits it verbatim |
 | `sec_methodology` | search/load shared knowledge fragments |
 | `sec_audit` | review every allow/deny/ask decision the tool layer made |
 

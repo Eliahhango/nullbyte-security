@@ -2,7 +2,7 @@
 
 Follows `docs/HACKERAI_GAP_ANALYSIS.md`. Constraint throughout: no cloud infra,
 no competing reasoning engine, no mocks outside tests, existing public tool
-interfaces preserved, OpenCode touched only where unavoidable.
+interfaces preserved, the host CLI touched only where unavoidable.
 
 ## Shipped in this pass
 
@@ -83,4 +83,4 @@ signal of a bypassed tool layer.
   auditable. Jaccard stays.
 - Hosted multi-tenant isolation, Convex-style persistence, sandboxed execution —
   different deployment model; local execution is the design.
-- A second agent loop — OpenCode's runtime is the only reasoning engine.
+- A second agent loop — NullByte's runtime is the only reasoning engine.
