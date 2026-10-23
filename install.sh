@@ -10,6 +10,8 @@ CONFIG_DIR="${NULLBYTE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/nullbyte}"
 RUN_DEPS=1
 RUN_TESTS=1
 CHECK_ONLY=0
+UNINSTALL=0
+PURGE=0
 ISSUES=0
 FIXED=0
 NEED_DEPS=0
@@ -26,6 +28,8 @@ Options:
   --check      Inspect only, change nothing, exit 1 if issues are found
   --no-deps    Skip dependency installation
   --no-test    Skip the test suite
+  --uninstall  Remove installed links and the managed checkout; keep config and project data
+  --purge      Uninstall and also remove the NullByte config directory
   -h, --help   Show this help
 EOF
 }
@@ -156,6 +160,8 @@ for arg in "$@"; do
     --check) CHECK_ONLY=1; RUN_DEPS=0; RUN_TESTS=0 ;;
     --no-deps) RUN_DEPS=0 ;;
     --no-test|--skip-tests) RUN_TESTS=0 ;;
+    --uninstall) UNINSTALL=1 ;;
+    --purge) UNINSTALL=1; PURGE=1 ;;
     -h|--help) usage; drain_stdin; exit 0 ;;
     *)
       echo "error: unknown option: $arg" >&2
@@ -234,6 +240,64 @@ bootstrap_repo() {
   fi
   note "$REPO_DIR"
 }
+
+remove_installed_link() {
+  local dest="$1" label="$2"
+  if [ -L "$dest" ]; then
+    rm -f -- "$dest"
+    ui_success "$label removed"
+  elif [ -e "$dest" ]; then
+    ui_warn "$label is not a symlink; leaving it in place"
+  else
+    note "$label was not installed"
+  fi
+}
+
+uninstall_layer() {
+  ui_info "Uninstalling NullByte security"
+
+  remove_installed_link "$CONFIG_DIR/plugin/nullbyte-security.ts" "security plugin"
+  remove_installed_link "$CONFIG_DIR/security-lib" "security-lib"
+
+  if [ -d "$CONFIG_DIR/plugin" ] && [ -z "$(ls -A "$CONFIG_DIR/plugin" 2>/dev/null)" ]; then
+    rmdir "$CONFIG_DIR/plugin" 2>/dev/null || true
+  fi
+
+  if [ "$PURGE" -eq 1 ]; then
+    if [ -e "$CONFIG_DIR" ] || [ -L "$CONFIG_DIR" ]; then
+      rm -rf -- "$CONFIG_DIR"
+      ui_success "Removed config: $CONFIG_DIR"
+    else
+      note "Config already absent: $CONFIG_DIR"
+    fi
+  else
+    note "Config preserved: $CONFIG_DIR"
+  fi
+
+  if [ "$FROM_CURL" -eq 1 ]; then
+    if [ -d "$REPO_DIR/.git" ] && [ -f "$REPO_DIR/package.json" ] &&
+       grep -q '"name"[[:space:]]*:[[:space:]]*"nullbyte-security"' "$REPO_DIR/package.json"; then
+      rm -rf -- "$REPO_DIR"
+      ui_success "Removed managed checkout: $REPO_DIR"
+    elif [ -e "$REPO_DIR" ] || [ -L "$REPO_DIR" ]; then
+      ui_warn "Left unexpected path in place: $REPO_DIR"
+    else
+      note "No managed checkout at $REPO_DIR"
+    fi
+  else
+    note "Local checkout preserved: $REPO_DIR"
+  fi
+
+  note "Project data under .nullbyte/security/ was not touched"
+  note "The NullByte CLI itself is separate and was not removed"
+  ui_outro "Done"
+}
+
+if [ "$UNINSTALL" -eq 1 ]; then
+  uninstall_layer
+  drain_stdin
+  exit 0
+fi
 
 if [ "$FROM_CURL" -eq 1 ]; then
   if [ "$CHECK_ONLY" -eq 1 ] && [ ! -d "$REPO_DIR/.git" ]; then
