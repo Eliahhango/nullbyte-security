@@ -6,6 +6,22 @@
   "description": "Security capability layer for the NullByte CLI — scope enforcement, recon, port scanning, scanner orchestration, secret scanning, CVSS-scored findings and reporting.",
   "license": "MIT",
   "author": "Eliahhango",
+  "homepage": "https://github.com/Eliahhango/nullbyte-security#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Eliahhango/nullbyte-security.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Eliahhango/nullbyte-security/issues"
+  },
+  "keywords": [
+    "pentesting",
+    "security",
+    "offensive-security",
+    "vulnerability-scanner",
+    "ai-agents",
+    "nullbyte"
+  ],
   "scripts": {
     "test": "node --experimental-strip-types --test security-lib/__tests__/*.test.ts",
     "lab": "node tools/lab/vulnerable-server.mjs"

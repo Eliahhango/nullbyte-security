@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="430" viewBox="0 0 1000 430" role="img" aria-label="Animated NullByte security session">
+  <defs>
+    <linearGradient id="term" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#080b10"/>
+    </linearGradient>
+    <style>
+      @keyframes show {
+        from { opacity: 0; transform: translateY(5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+      .l { opacity: 1; animation: show .45s ease-out both; }
+      .cursor { animation: blink 1s step-end infinite; }
+      @media (prefers-reduced-motion: reduce) {
+        .l, .cursor { animation: none; opacity: 1; }
+      }
+      text {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 17px;
+      }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="998" height="428" rx="16" fill="url(#term)" stroke="#1f2937"/>
+  <rect x="1" y="1" width="998" height="46" rx="16" fill="#111827"/>
+  <rect x="1" y="30" width="998" height="17" fill="#111827"/>
+  <circle cx="28" cy="24" r="6" fill="#ef4444"/>
+  <circle cx="50" cy="24" r="6" fill="#f59e0b"/>
+  <circle cx="72" cy="24" r="6" fill="#22c55e"/>
+  <text x="500" y="30" text-anchor="middle" fill="#6b7280" font-size="14">nullbyte — zsh</text>
+  <text x="922" y="30" fill="#374151" font-size="12">example</text>
+
+  <g transform="translate(34 88)">
+    <g class="l" style="animation-delay:.2s">
+      <text x="0" y="0" fill="#4ade80">$</text>
+      <text x="20" y="0" fill="#e5e7eb">nullbyte run "recon app.acme.test"</text>
+    </g>
+
+    <g class="l" style="animation-delay:.8s">
+      <text x="0" y="36" fill="#22d3ee">→</text>
+      <text x="26" y="36" fill="#9ca3af">scope check:</text>
+      <text x="138" y="36" fill="#4ade80">allowed</text>
+      <text x="212" y="36" fill="#6b7280">(authorized_all)</text>
+    </g>
+
+    <g class="l" style="animation-delay:1.2s">
+      <text x="0" y="72" fill="#22d3ee">→</text>
+      <text x="26" y="72" fill="#9ca3af">dns:</text>
+      <text x="70" y="72" fill="#e5e7eb">app.acme.test → 203.0.113.10</text>
+    </g>
+
+    <g class="l" style="animation-delay:1.6s">
+      <text x="0" y="108" fill="#22d3ee">→</text>
+      <text x="26" y="108" fill="#9ca3af">http:</text>
+      <text x="78" y="108" fill="#4ade80">200 OK</text>
+      <text x="146" y="108" fill="#6b7280">·</text>
+      <text x="162" y="108" fill="#e5e7eb">server: nginx · title: Acme Portal</text>
+    </g>
+
+    <g class="l" style="animation-delay:2.0s">
+      <text x="0" y="144" fill="#22d3ee">→</text>
+      <text x="26" y="144" fill="#9ca3af">tls:</text>
+      <text x="70" y="144" fill="#e5e7eb">TLS 1.3 · expires in 41 days</text>
+    </g>
+
+    <g class="l" style="animation-delay:2.4s">
+      <text x="0" y="180" fill="#22d3ee">→</text>
+      <text x="26" y="180" fill="#9ca3af">finding:</text>
+      <text x="104" y="180" fill="#fbbf24">missing HSTS</text>
+      <text x="224" y="180" fill="#6b7280">(medium, CVSS 5.3)</text>
+    </g>
+
+    <g class="l" style="animation-delay:2.8s">
+      <text x="0" y="216" fill="#22d3ee">→</text>
+      <text x="26" y="216" fill="#9ca3af">evidence:</text>
+      <text x="114" y="216" fill="#60a5fa">sha256:9f2c… archived</text>
+    </g>
+
+    <g class="l" style="animation-delay:3.2s">
+      <text x="0" y="252" fill="#22d3ee">→</text>
+      <text x="26" y="252" fill="#9ca3af">report:</text>
+      <text x="94" y="252" fill="#c084fc">app.acme.test/reports/report.md</text>
+    </g>
+
+    <g class="l" style="animation-delay:3.6s">
+      <text x="0" y="294" fill="#4ade80">+</text>
+      <text x="26" y="294" fill="#e5e7eb">2 findings recorded · evidence hash verified</text>
+    </g>
+
+    <g class="l" style="animation-delay:4.0s">
+      <text x="0" y="334" fill="#4ade80">$</text>
+      <rect class="cursor" x="18" y="320" width="10" height="18" fill="#4ade80"/>
+    </g>
+  </g>
+</svg>
