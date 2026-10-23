@@ -32,11 +32,8 @@ connects to *local* stdio MCP servers, so this wrapper bridges the two: it start
 
    The key is never written into any config file. It is gitignored (`*.key`).
 
-2. **Dependencies** for the bridge:
-
-   ```bash
-   cd mcp/stitch && npm install
-   ```
+2. **Dependencies** for the bridge are installed by the repository
+   `install.sh`. If you skipped them, run `cd mcp/stitch && npm install`.
 
 3. **Register the server** in `~/.config/nullbyte/nullbyte.jsonc`:
 

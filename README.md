@@ -23,8 +23,19 @@ git clone https://github.com/Eliahhango/nullbyte-security.git ~/nullbyte-securit
 cd ~/nullbyte-security && ./install.sh
 ```
 
-`install.sh` symlinks the plugin into `~/.config/nullbyte/`, so `git pull` updates
-the live install. Verify with `npm test`.
+`install.sh` starts by inspecting the checkout and the installed files. It
+checks required source files, the config tree, both symlinks, dependencies and
+the CLI, then automatically repairs anything missing or broken before installing
+dependencies and running the test suite. Because the code is symlinked,
+`git pull` updates the live install.
+
+It is also the repair command. Re-run it after a failed or partial install: it
+recreates missing directories, replaces stale or broken symlinks, backs up
+conflicting files with a timestamp, and leaves existing configuration and
+engagement data untouched. Use `./install.sh --no-test` or
+`./install.sh --no-deps` to skip those steps, or `./install.sh --check` for an
+inspection-only pass that changes nothing and exits non-zero if repairs are
+needed.
 
 Config is read once at startup and is **not** hot-reloaded — restart nullbyte
 after changing a plugin, agent or config file.
