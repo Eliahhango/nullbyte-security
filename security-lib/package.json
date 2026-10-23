@@ -4,7 +4,10 @@
   "type": "module",
   "description": "Security capability layer for the NullByte CLI (scope enforcement, recon, scanners, findings, reporting).",
   "scripts": {
-    "test": "node --test __tests__/*.test.ts",
-    "typecheck": "node --check tools/index.ts"
+    "test": "node --experimental-strip-types --test __tests__/*.test.ts",
+    "typecheck": "node --experimental-strip-types --check tools/index.ts"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }

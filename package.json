@@ -7,13 +7,13 @@
   "license": "MIT",
   "author": "Eliahhango",
   "scripts": {
-    "test": "node --test security-lib/__tests__/*.test.ts",
+    "test": "node --experimental-strip-types --test security-lib/__tests__/*.test.ts",
     "lab": "node tools/lab/vulnerable-server.mjs"
   },
   "devDependencies": {
     "@opencode-ai/plugin": "1.16.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.6.0"
   }
 }

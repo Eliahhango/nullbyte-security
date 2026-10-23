@@ -3,12 +3,15 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="${NULLBYTE_CONFIG:-$HOME/.config/nullbyte}"
+# Always use the NullByte-specific XDG directory. Never reuse a host
+# opencode config directory, so the two installations cannot collide.
+# The CLI creates this root on first run; install.sh creates it first because
+# it needs somewhere to put the symlinks.
+CONFIG_DIR="${NULLBYTE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/nullbyte}"
 
 if [ ! -d "$CONFIG_DIR" ]; then
-  echo "error: NullByte config dir not found: $CONFIG_DIR" >&2
-  echo "       set NULLBYTE_CONFIG=/path/to/.config/nullbyte and retry" >&2
-  exit 1
+  echo "→ creating config dir: $CONFIG_DIR"
+  mkdir -p "$CONFIG_DIR"
 fi
 
 echo "→ repo:   $REPO_DIR"
