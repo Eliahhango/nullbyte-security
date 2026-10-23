@@ -14,12 +14,13 @@ interfaces preserved, the host CLI touched only where unavoidable.
 | Knowledge base | 25 fragments, category-qualified ids, budgeted load, boundary escaping, non-grant notice | `methodology.ts` |
 | Tool surfaces | progressive-disclosure `sec_methodology`; closure-aware `sec_finding` | `tools/knowledge.ts`, `tools/findings.ts` |
 | Reporting | closure summary, counterevidence, assumptions, fix effort, evidence states | `report.ts` |
-| **Scope enforcement** | per-port authorization for `sec_ports` / `sec_scan` (P0 fix) | `scope.ts`, `tools/shared.ts`, `tools/ports.ts`, `tools/scan.ts` |
+| Scan authorization | `sec_recon` / `sec_ports` / `sec_scan` authorized by default; allow-list retained for shell, webfetch and retest | `scope.ts`, `tools/shared.ts`, `tools/recon.ts`, `tools/ports.ts`, `tools/scan.ts` |
+| Chat-safe progress | live spinner auto-suppressed in chat/TUI harnesses, terminal remains opt-in | `progress.ts` |
 | Coverage ledger | surface × risk outcomes, duplicate rejection, revision history, report section, JSON sidecar and SARIF summary | `coverage.ts`, `tools/coverage.ts` |
 | Threat model | shared per-target model, save/amend with append-only amendments, report embedding | `threat-model.ts`, `tools/threat-model.ts` |
 | Agent resilience | transient provider/TLS/socket retry in a fresh child session, shared deadline, configurable attempts | `agents.ts`, `tools/agents.ts` |
 | Reporting | coverage and threat-model sections; `*.coverage.json`; SARIF coverage notification | `report.ts`, `interop.ts` |
-| Tests | 331 → 343 | `__tests__/*` |
+| Tests | 331 → 348 | `__tests__/*` |
 
 ## Strix adoption roadmap
 
@@ -35,13 +36,16 @@ the deployment model.
 | 4 | Persistent agent graph | `sec_agents` runs one batch and returns; no create/send/wait/stop/view across turns | Next |
 | 5 | Scan modes and budgets | No quick/deep mode, token/step budget or cost guardrail | Next |
 | 6 | Session resume | A long assessment cannot be paused and resumed from the same plan state | Next |
-| 7 | Notes and todos | No shared engagement notebook separate from findings and methodology | Next |
-| 8 | API-spec testing | No OpenAPI/GraphQL-driven endpoint and authz matrix | Next |
-| 9 | Web intelligence | No search/fetch research loop with provenance | Later |
-| 10 | Proxy/browser/MCP | No browser or proxy integration; would add large dependencies | Later |
+| 7 | API-spec testing | No OpenAPI/GraphQL-driven endpoint and authz matrix | Next |
+| 8 | Web intelligence | No search/fetch research loop with provenance | Later |
+| 9 | Proxy/browser/MCP | No browser or proxy integration; would add large dependencies | Later |
 
 The next batch should land items 4-6 together: a persisted plan/agent graph,
-bounded execution budgets, and resume state. Items 7-8 can follow independently.
+bounded execution budgets, and resume state. API-spec testing can follow
+independently.
+
+Not planned: a separate engagement notes/todos store. Keep that state in the
+existing transcript/todowrite rather than adding another persisted surface.
 
 ## Next
 

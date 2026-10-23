@@ -39,7 +39,7 @@
 
 Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI.
 An agentic offensive-security toolset that thinks in targets, but is held down
-by scope checks, evidence hashes and an audit chain — not by vibes.
+by authorization guards, evidence hashes and an audit chain — not by vibes.
 
 `sec_*` tools cover the full loop: scope, recon, ports, scanners, SAST, the
 shared threat model, evidence, findings, coverage, retesting, reporting,
@@ -54,7 +54,7 @@ methodology and audit.
 
 ## `WHY`
 
-- **Scope is enforced by the tool layer**, not the prompt. Out-of-scope targets are refused before a packet moves.
+- **Scanning is authorized by default.** `sec_recon`, `sec_ports` and `sec_scan` do not require a scope declaration or approval prompt; metadata and link-local addresses are always refused. Shell, `webfetch` and retest commands still honour an opt-in allow-list.
 - **Every decision is audited.** Allow, deny and ask decisions land in a hash-chained trail.
 - **Evidence is checked before it is trusted.** Artifacts carry SHA-256 digests and are re-hashed on read.
 - **Findings cannot be closed without proof.** The closure gate is code, not a suggestion.
@@ -100,15 +100,17 @@ Add `--purge` to also remove `~/.config/nullbyte`. Project data is never touched
     └────────────── hash-chained audit trail ───────────────┘
 ```
 
-Long scans render a live progress line with elapsed time and counters; set
-`NULLBYTE_NO_PROGRESS=1` to disable it.
+Long scans render a live progress line with elapsed time and counters on a
+standalone terminal. It is suppressed automatically inside chat/TUI harnesses so
+stderr animation cannot block the prompt; set `NULLBYTE_PROGRESS=1` to force it,
+or `NULLBYTE_NO_PROGRESS=1` / `NULLBYTE_PROGRESS=0` to disable it.
 
 ## `ARSENAL`
 
 | Tool | Function |
 |---|---|
 | `sec_scope` | authorization mode; check a target; write a starter scope |
-| `sec_agents` | plan, spawn and monitor multiple subagents with parallel work and dependencies |
+| `sec_agents` | plan, spawn and monitor multiple subagents with parallel work and dependencies; a child can ask you a necessary clarifying question |
 | `sec_recon` | DNS, HTTP, TLS, headers and fingerprinting; archives raw responses as evidence |
 | `sec_ports` | bounded TCP connect scan and banner grab |
 | `sec_scan` | nmap, nuclei, nikto, whatweb, sslscan and sqlmap adapters |
@@ -126,9 +128,13 @@ Long scans render a live progress line with elapsed time and counters; set
 
 ## `SCOPE LOCK`
 
-With no scope file, every target is allowed and two guards stay active:
-destructive commands and local credential files. For a real engagement, create
-`.nullbyte/security/scope.json`:
+Scanning needs no scope file: `sec_recon`, `sec_ports` and `sec_scan` are
+authorized by default, at every intensity, with no approval prompt. Metadata and
+link-local addresses are still refused. Destructive commands and local
+credential files stay guarded too.
+
+An opt-in `.nullbyte/security/scope.json` remains useful for `bash`, `webfetch`
+and `sec_retest`, which still honour it:
 
 ```json
 {
@@ -144,7 +150,8 @@ destructive commands and local credential files. For a real engagement, create
 ```
 
 `include` accepts hosts, wildcards, IPs, CIDRs and URLs. `exclude` wins. Scope is
-operator-owned unless `allow_model_scope_edit` is enabled.
+operator-owned unless `allow_model_scope_edit` is enabled. Scan targets ignore
+this allow-list by design; it is not a gate on recon or scanner adapters.
 
 ## `INTEL`
 

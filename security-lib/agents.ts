@@ -95,8 +95,10 @@ const MAX_TASK_OUTPUT = 16_000
 
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/
 const CHILD_DIRECTIVE =
-  "You are a child agent working autonomously. Do not ask the user questions; " +
-  "make reasonable assumptions and finish with the requested deliverable."
+  "You are a child agent working autonomously. Ask the user a question only when it is genuinely necessary: the " +
+  "answer materially changes the work and cannot be safely inferred from the objective, repository, or prior " +
+  "context. Otherwise make reasonable assumptions, state them, and finish the deliverable. Never ask for permission " +
+  "to proceed with work that is already authorized."
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
@@ -426,7 +428,7 @@ async function runChildOnce(
         body: {
           ...(options.agent ? { agent: options.agent } : {}),
           ...(options.model ? { model: options.model } : {}),
-          tools: { sec_agents: false, task: false, subagent: false, question: false },
+          tools: { sec_agents: false, task: false, subagent: false },
           parts: [{ type: "text", text: `${CHILD_DIRECTIVE}\n\n${options.prompt}` }],
         },
       }),

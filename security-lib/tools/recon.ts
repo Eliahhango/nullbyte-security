@@ -2,7 +2,8 @@
  * sec_recon — DNS, HTTP, TLS, header and technology reconnaissance.
  *
  * Passive by default: read-only requests that do not mutate target state.
- * Redirect hops are re-validated against scope inside the HTTP prober.
+ * Targets are authorized by default; redirect hops still cannot reach metadata
+ * or link-local infrastructure.
  */
 
 import { tool } from "@opencode-ai/plugin"
@@ -11,7 +12,7 @@ import { httpProbe } from "../net/http.ts"
 import { tlsInspect } from "../net/tls.ts"
 import { analyzeSecurityHeaders } from "../net/headers.ts"
 import { fingerprint } from "../net/fingerprint.ts"
-import { authorize } from "../scope.ts"
+import { authorizeOpen } from "../scope.ts"
 import { saveEvidence } from "../evidence.ts"
 import { loadScope } from "../config.ts"
 import { configureLimits, describeLimits, isPaced } from "../ratelimit.ts"
@@ -70,7 +71,8 @@ export const secRecon = tool({
     "tls (protocol, cipher, certificate subject/issuer/validity/SAN, self-signed and expiry), " +
     "headers (security-header grading + cookie flags), fingerprint (technology detection with cited evidence), " +
     "or all. Passive: sends normal GET/HEAD requests and never mutates target state. " +
-    "Out-of-scope targets are refused by the tool layer. The raw HTTP response is archived as an evidence artifact by " +
+    "Targets are authorized by default (scope allow-lists do not gate scans); metadata and link-local addresses are " +
+    "still refused. The raw HTTP response is archived as an evidence artifact by " +
     "default and its id is returned, so a finding about a response can cite the response itself; pass archive=false to skip it.",
   args: {
     target: tool.schema.string().describe("authorized host, IP or URL (e.g. https://lab.local:8443)"),
@@ -89,7 +91,14 @@ export const secRecon = tool({
     const timeoutMs = Math.max(1000, Math.min(args.timeout_ms ?? 10000, 60000))
     const root = loadScope(c.worktree).paths.root
 
-    await enforce({ ctx: c, tool: "sec_recon", target, intensity: "passive", purpose: `${args.check} reconnaissance` })
+    await enforce({
+      ctx: c,
+      tool: "sec_recon",
+      target,
+      intensity: "passive",
+      unscoped: true,
+      purpose: `${args.check} reconnaissance`,
+    })
 
     const scheme = target.scheme ?? (target.port === 80 ? "http" : "https")
     const port = args.port ?? target.port ?? (scheme === "http" ? 80 : 443)
@@ -99,7 +108,7 @@ export const secRecon = tool({
     const validateHop = (hopUrl: string) => {
       try {
         const u = new URL(hopUrl)
-        const d = authorize(scope, { host: u.hostname, port: u.port ? Number(u.port) : undefined }, "passive")
+        const d = authorizeOpen({ host: u.hostname, port: u.port ? Number(u.port) : undefined }, "passive")
         return { allowed: d.allowed, reason: d.reason }
       } catch {
         return { allowed: false, reason: "unparseable redirect target" }

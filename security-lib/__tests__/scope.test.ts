@@ -10,7 +10,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { join } from "node:path"
 import { homedir } from "node:os"
-import { authorize, authorizePorts, authorizeResolved, describeScope, portAllowance } from "../scope.ts"
+import { authorize, authorizeOpen, authorizePorts, authorizeResolved, describeScope, portAllowance } from "../scope.ts"
 import { DEFAULT_SCOPE, normalizeScope, validateScope, scopeTemplate } from "../config.ts"
 import { hostFromUrl, ipv4InCidr, isIp, isPrivateAddress, isUnconditionallyDenied } from "../netsafe.ts"
 import { engagementDir, resolveProjectRoot, setRuntimeRoot } from "../paths.ts"
@@ -34,9 +34,30 @@ test("default posture: no scope file, no include list, no denial", () => {
   assert.equal(AUTHORIZED_ALL.intensity, "exploit")
 })
 
-test("default posture: resolved-address re-check does not deny either", () => {
+test("default posture: metadata is still refused, before resolution", () => {
+  for (const host of ["169.254.169.254", "metadata.google.internal"]) {
+    const d = authorize(AUTHORIZED_ALL, { host }, "passive")
+    assert.equal(d.allowed, false, host)
+    assert.equal(d.code, "net.metadata")
+  }
+})
+
+test("default posture: resolved-address re-check still refuses metadata", () => {
   const d = authorizeResolved(AUTHORIZED_ALL, { host: "example.com" }, ["169.254.169.254"])
-  assert.equal(d.allowed, true)
+  assert.equal(d.allowed, false)
+  assert.equal(d.code, "net.metadata")
+})
+
+test("authorizeOpen ignores allow-lists but keeps the absolute metadata guard", () => {
+  for (const host of ["evil.test", "127.0.0.1", "10.0.0.5"]) {
+    const d = authorizeOpen({ host, port: 8081 }, "intrusive")
+    assert.equal(d.allowed, true, host)
+    assert.equal(d.code, "scope.authorized-all")
+    assert.equal(d.requiresApproval, false)
+  }
+  const denied = authorizeOpen({ host: "169.254.169.254" }, "passive")
+  assert.equal(denied.allowed, false)
+  assert.equal(denied.code, "net.metadata")
 })
 
 test("authorized_all still reports a target it cannot parse", () => {
@@ -142,8 +163,10 @@ test("describeScope states the mode plainly", () => {
   const all = describeScope(AUTHORIZED_ALL, "defaults")
   assert.match(all, /AUTHORIZED-ALL/)
   assert.match(all, /block_destructive: true/)
+  assert.match(all, /scan_authorization: unrestricted/)
   const list = describeScope(LIST_MODE, "file")
   assert.match(list, /allow-list/)
+  assert.match(list, /scan_authorization: unrestricted/)
   assert.doesNotMatch(list, /AUTHORIZED-ALL/)
 })
 

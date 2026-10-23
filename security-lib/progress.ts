@@ -27,6 +27,26 @@ function localeSupportsUnicode(): boolean {
   return locale.includes("utf")
 }
 
+/**
+ * Chat/TUI harnesses capture stderr and render it inside the conversation. A
+ * carriage-return animation there fights the input loop and makes the prompt
+ * feel locked. Keep the animation for a real standalone terminal; suppress it
+ * automatically when a known chat harness is driving the process. The env
+ * overrides are explicit: NULLBYTE_PROGRESS=1 forces it on, =0 or
+ * NULLBYTE_NO_PROGRESS=1 forces it off.
+ */
+const CHAT_HARNESS_ENV = ["OPENCODE", "CLAUDECODE", "CURSOR_TRACE_ID", "COPILOT_AGENT"] as const
+
+function inChatHarness(): boolean {
+  return CHAT_HARNESS_ENV.some((key) => Boolean(process.env[key]))
+}
+
+function progressEnabled(stream: ProgressStream): boolean {
+  if (process.env.NULLBYTE_NO_PROGRESS === "1" || process.env.NULLBYTE_PROGRESS === "0") return false
+  if (process.env.NULLBYTE_PROGRESS === "1") return true
+  return Boolean(stream.isTTY) && !inChatHarness()
+}
+
 function colorEnabled(opts: ProgressOptions): boolean {
   if (opts.noColor || process.env.NO_COLOR) return false
   if ((process.env.TERM || "") === "dumb") return false
@@ -57,7 +77,7 @@ class LiveProgress implements Progress {
 
   constructor(message: string, opts: ProgressOptions = {}) {
     this.stream = opts.stream ?? process.stderr
-    this.enabled = opts.enabled ?? (Boolean(this.stream.isTTY) && process.env.NULLBYTE_NO_PROGRESS !== "1")
+    this.enabled = opts.enabled ?? progressEnabled(this.stream)
     this.intervalMs = opts.intervalMs ?? 80
     this.timer = opts.timer ?? false
     this.now = opts.now ?? Date.now

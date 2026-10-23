@@ -168,13 +168,27 @@ test("a truncated archive is still stored whole, without hitting the evidence li
   }
 })
 
-test("a refused redirect hop archives what was actually fetched, and says where it stopped", async () => {
+test("recon scans a target even when the allow-list excludes it", async () => {
   const s = await serve((_req, res) => {
-    res.writeHead(302, { Location: "http://198.51.100.9/other" })
+    res.writeHead(200, { "Content-Type": "text/html" })
+    res.end("<title>still scanning</title>")
+  })
+  const p = project({ authorized_all: false, include: [{ host: "example.com" }], exclude: ["127.0.0.1"] })
+  try {
+    const out = await secRecon.execute({ target: `${s.url}/`, check: "headers" }, p.ctx)
+    assert.match(out, /security headers grade/)
+    assert.doesNotMatch(out, /not covered by any authorized scope entry|explicitly excluded/)
+  } finally {
+    await s.stop()
+  }
+})
+
+test("a metadata redirect is refused and the archive says where it stopped", async () => {
+  const s = await serve((_req, res) => {
+    res.writeHead(302, { Location: "http://169.254.169.254/latest/meta-data/" })
     res.end()
   })
-  // allow-list mode: the redirect target is out of scope, so the probe must stop
-  // rather than follow it (with authorized_all there is nothing to refuse)
+  // Scans ignore the allow-list, but metadata/link-local is an absolute refusal.
   const p = project({ authorized_all: false, include: [{ host: "127.0.0.1" }] })
   try {
     const out = await secRecon.execute({ target: `${s.url}/`, check: "http" }, p.ctx)
@@ -182,7 +196,7 @@ test("a refused redirect hop archives what was actually fetched, and says where 
     const body = readEvidence(p.root, listEvidence(p.root)[0]!.id)!
     assert.match(body, /HTTP\/1\.1 302 Found\r\n/)
     // the Location header is the allowed hop's own evidence and must survive…
-    assert.match(body, /Location: http:\/\/198\.51\.100\.9\/other/)
+    assert.match(body, /Location: http:\/\/169\.254\.169\.254\/latest\/meta-data\//)
     // …but the refused hop itself was never fetched, so there is only one response
     assert.equal((body.match(/HTTP\/1\.1 /g) ?? []).length, 1, "only the authorized hop was fetched")
   } finally {

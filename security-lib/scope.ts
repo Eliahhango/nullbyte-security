@@ -73,9 +73,17 @@ export function authorize(
     return { allowed: false, code: "target.empty", reason: "no target host was provided" }
   }
 
-  // 0. authorized-by-default: the operator is the authorizer, so there is no
-  //    scope ceremony. Everything is permitted, at every intensity, unless the
-  //    engagement explicitly switched on allow-list enforcement.
+  // 1. never-permitted addresses (metadata / link-local / non-routable). This
+  //    guard is absolute: it applies before authorized_all too, because a
+  //    metadata pivot is never a test target.
+  const denied = isUnconditionallyDenied(host)
+  if (denied.denied) {
+    return { allowed: false, code: "net.metadata", reason: denied.reason!, intensity: requiredIntensity }
+  }
+
+  // 2. authorized-by-default: the operator is the authorizer, so there is no
+  //    scope ceremony. Everything else is permitted, at every intensity, unless
+  //    the engagement explicitly switched on allow-list enforcement.
   if (scope.authorized_all) {
     return {
       allowed: true,
@@ -87,20 +95,14 @@ export function authorize(
     }
   }
 
-  // 1. never-permitted addresses (metadata / link-local / non-routable)
-  const denied = isUnconditionallyDenied(host)
-  if (denied.denied) {
-    return { allowed: false, code: "net.metadata", reason: denied.reason!, intensity: requiredIntensity }
-  }
-
-  // 2. explicit exclusions always win
+  // 3. explicit exclusions always win
   for (const ex of scope.exclude) {
     if (hostMatchesEntry(ex, host)) {
       return { allowed: false, code: "scope.excluded", reason: `'${host}' is explicitly excluded by '${ex}'`, intensity: requiredIntensity }
     }
   }
 
-  // 3. private/loopback space requires explicit opt-in
+  // 4. private/loopback space requires explicit opt-in
   if (!opts.skipPrivateCheck && isIp(host) && isPrivateAddress(host) && !scope.allow_private) {
     return {
       allowed: false,
@@ -110,7 +112,7 @@ export function authorize(
     }
   }
 
-  // 4. must match an include entry
+  // 5. must match an include entry
   let matched: string | undefined
   let portRestricted: number[] | undefined
   for (const entry of scope.include) {
@@ -129,7 +131,7 @@ export function authorize(
     }
   }
 
-  // 5. port must be inside the entry's allowance when the entry restricts ports
+  // 6. port must be inside the entry's allowance when the entry restricts ports
   if (portRestricted && target.port !== undefined && !portRestricted.includes(target.port)) {
     return {
       allowed: false,
@@ -140,7 +142,7 @@ export function authorize(
     }
   }
 
-  // 6. intensity ceiling
+  // 7. intensity ceiling
   if (!atLeastIntensity(scope.intensity, requiredIntensity)) {
     return {
       allowed: false,
@@ -160,6 +162,30 @@ export function authorize(
     reason: `'${host}'${target.port ? `:${target.port}` : ""} is authorized by '${matched}'`,
     matched,
     requiresApproval,
+    intensity: requiredIntensity,
+  }
+}
+
+/**
+ * Authorization used by the scanning tools. Scans are authorized by default
+ * regardless of any allow-list in scope.json; the operator is the authorizer.
+ * The absolute metadata/link-local refusal still applies.
+ */
+export function authorizeOpen(target: Target, requiredIntensity: Intensity): Decision {
+  const host = normalizeHost(target.host)
+  if (!host) {
+    return { allowed: false, code: "target.empty", reason: "no target host was provided", intensity: requiredIntensity }
+  }
+  const denied = isUnconditionallyDenied(host)
+  if (denied.denied) {
+    return { allowed: false, code: "net.metadata", reason: denied.reason!, intensity: requiredIntensity }
+  }
+  return {
+    allowed: true,
+    code: "scope.authorized-all",
+    reason: `'${host}' is authorized by default; scan tools do not use the scope allow-list`,
+    matched: "*",
+    requiresApproval: false,
     intensity: requiredIntensity,
   }
 }
@@ -238,7 +264,17 @@ export function authorizeResolved(
   target: Target,
   resolvedIps: string[],
 ): Decision {
+  const hostDenied = isUnconditionallyDenied(normalizeHost(target.host))
+  if (hostDenied.denied) {
+    return { allowed: false, code: "net.metadata", reason: hostDenied.reason! }
+  }
   if (scope.authorized_all) {
+    for (const ip of resolvedIps) {
+      const denied = isUnconditionallyDenied(ip)
+      if (denied.denied) {
+        return { allowed: false, code: "net.metadata", reason: `${target.host} resolves to ${ip}: ${denied.reason}` }
+      }
+    }
     return {
       allowed: true,
       code: "scope.authorized-all",
@@ -277,6 +313,7 @@ export function describeScope(scope: Scope, source: string, warnings: string[] =
   lines.push(`block_destructive: ${scope.block_destructive}`)
   lines.push(`allow_private: ${scope.allow_private}`)
   lines.push(`model_may_edit_scope: ${scope.allow_model_scope_edit}`)
+  lines.push("scan_authorization: unrestricted — sec_recon/sec_ports/sec_scan are authorized by default; metadata/link-local refuse")
   lines.push(`source: ${source}`)
   lines.push("include:")
   if (scope.include.length === 0) {

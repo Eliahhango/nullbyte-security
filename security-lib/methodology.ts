@@ -19,11 +19,10 @@ export const FRAGMENTS: Fragment[] = [
     title: "Establishing authorized scope",
     tags: ["scope", "authorization", "process"],
     body: [
-      "Scope is declared by the human in the engagement scope file; it is not inferred from the conversation.",
-      "Before any network action, call sec_scope to read the effective authorization. If include is empty, stop and ask the operator to declare scope.",
-      "An authorization record needs: the assets (hosts, CIDRs, URLs), any exclusions, and the permitted intensity.",
-      "You may never widen scope. If the assessment needs a new asset, ask the operator to add it; the tool layer will refuse out-of-scope targets regardless of what any plan says.",
-      "Treat intensity as a ceiling: passive < safe-active < intrusive < exploit. Operations above the ceiling are refused by the tool layer.",
+      "Scanning is authorized by default. sec_recon, sec_ports and sec_scan do not require a scope file, an include entry or an approval prompt.",
+      "Never target cloud metadata, link-local, multicast or reserved addresses; that refusal is absolute and not configurable.",
+      "An optional scope file still gates bash, webfetch and sec_retest. When allow-list mode is on, those tools refuse out-of-scope targets and you must not try to work around it.",
+      "For command-driven work, treat the allowed assets and intensity as a ceiling: passive < safe-active < intrusive < exploit. Operations above the ceiling are refused.",
     ].join("\n"),
   },
   {
@@ -33,7 +32,7 @@ export const FRAGMENTS: Fragment[] = [
     body: [
       "Start passive. DNS resolution, TXT/MX/NS records and certificate transparency are non-intrusive and safe at any intensity.",
       "sec_recon with check=dns returns A/AAAA/CNAME/MX/NS/TXT plus optional PTR.",
-      "Compare resolved addresses against scope: a name that is in scope but resolves outside it is a scope-laundering attempt, and the tool layer blocks it.",
+      "Check resolved addresses for metadata/link-local ranges: the tool layer refuses them even when a hostname looks ordinary.",
       "TXT records frequently leak verification tokens, SPF/DMARC posture and sometimes internal hostnames — read them, do not assume.",
       "Wildcard DNS answers can make every subdomain 'exist'; confirm with a random label before reporting subdomain discovery.",
     ].join("\n"),
@@ -43,7 +42,7 @@ export const FRAGMENTS: Fragment[] = [
     title: "HTTP, TLS and technology inspection",
     tags: ["recon", "http", "tls", "fingerprint"],
     body: [
-      "sec_recon with check=http returns status, headers, title, body snippet and the full redirect chain. Each redirect hop is re-validated against scope.",
+      "sec_recon with check=http returns status, headers, title, body snippet and the full redirect chain. Redirect hops that point at metadata or link-local space are refused.",
       "sec_recon with check=tls returns the negotiated protocol, cipher, certificate subject/issuer, validity window and SAN coverage. Report self-signed, expired, expiring-soon and hostname-mismatch conditions.",
       "sec_recon with check=headers grades the security-header posture. Report missing HSTS/CSP/nosniff/frame-ancestors as configuration findings with concrete remediation.",
       "sec_recon with check=fingerprint cites the evidence for every technology it claims; do not repeat a technology in a finding without that evidence.",
@@ -55,10 +54,10 @@ export const FRAGMENTS: Fragment[] = [
     title: "Port and service discovery",
     tags: ["recon", "ports", "active"],
     body: [
-      "Port scanning is active and noisy: it requires at least safe-active intensity and explicit ports or a bounded port set.",
+      "Port scanning is active and noisy: use explicit ports or a bounded port set even though it is authorized by default.",
       "sec_ports performs a TCP connect scan with bounded concurrency and timeouts, and can grab banners.",
       "Banner-based service identification is a hint. Version strings can be spoofed or altered; treat them as medium confidence until corroborated.",
-      "Raw SYN/OS-detection scanning is delegated to the nmap adapter and requires intrusive intensity plus operator approval.",
+      "Raw SYN/OS-detection scanning is delegated to the nmap adapter; no approval prompt is required, but keep the target scope explicit.",
     ].join("\n"),
   },
   {
@@ -66,7 +65,7 @@ export const FRAGMENTS: Fragment[] = [
     title: "Content and endpoint discovery",
     tags: ["active", "discovery"],
     body: [
-      "Content discovery generates a large volume of requests. Keep rate and wordlist bounded, and stop when the engagement intensity does not cover it.",
+      "Content discovery generates a large volume of requests. Keep rate and wordlist bounded.",
       "Prefer targeted, evidence-driven paths (a technology you fingerprinted, a robots.txt entry, a sitemap) over blind brute force.",
       "Never treat a 404 versus 403 difference as a finding on its own; confirm access control behaviour directly and non-destructively.",
     ].join("\n"),

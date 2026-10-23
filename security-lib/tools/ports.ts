@@ -1,6 +1,7 @@
 /**
  * sec_ports — bounded TCP connect scanning.
- * Active but non-destructive: requires at least safe-active intensity.
+ * Active but non-destructive. Targets are authorized by default; metadata and
+ * link-local addresses are still refused.
  */
 
 import { tool } from "@opencode-ai/plugin"
@@ -13,10 +14,11 @@ import { enforcePorts, splitTarget, type ToolCtxLike } from "./shared.ts"
 
 export const secPorts = tool({
   description:
-    "TCP connect port scan against an AUTHORIZED target. Bounded: explicit ports, concurrency and per-port timeouts, and a " +
-    "hard cap on how many ports one call may probe. Optionally grabs service banners. This is a connect scan (no raw sockets, " +
-    "no stealth) and requires at least safe-active intensity; raw SYN/OS-detection scanning belongs to the nmap adapter " +
-    "(sec_scan profile=intrusive) which requires approval. Results are hints, not verified vulnerabilities.",
+    "TCP connect port scan against a target. Bounded: explicit ports, concurrency and per-port timeouts, and a " +
+    "hard cap on how many ports one call may probe. Optionally grabs service banners. This is a connect scan (no raw " +
+    "sockets, no stealth). Targets are authorized by default; scope allow-lists do not gate scans and there is no " +
+    "approval prompt. Raw SYN/OS-detection scanning belongs to the nmap adapter (sec_scan profile=intrusive). " +
+    "Results are hints, not verified vulnerabilities.",
   args: {
     target: tool.schema.string().describe("authorized host or IP"),
     ports: tool.schema.string().optional().describe("port spec like '80,443,8000-8010'; default is a curated common set"),

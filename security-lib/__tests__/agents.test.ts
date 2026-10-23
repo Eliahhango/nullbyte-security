@@ -151,9 +151,16 @@ test("independent tasks run in parallel and report outputs", async () => {
   assert.ok(fake.created.every((entry) => entry.parentID === "parent"))
   assert.ok(
     fake.prompts.every(
-      (entry) =>
-        entry.tools?.sec_agents === false && entry.tools?.task === false && entry.tools?.subagent === false && entry.tools?.question === false,
+      (entry) => entry.tools?.sec_agents === false && entry.tools?.task === false && entry.tools?.subagent === false,
     ),
+  )
+  assert.ok(
+    fake.prompts.every((entry) => entry.tools?.question !== false),
+    "child agents must be able to ask the operator a necessary question",
+  )
+  assert.ok(
+    fake.prompts.every((entry) => /Ask the user a question only when it is genuinely necessary/.test(entry.prompt)),
+    "the child directive should allow questions but keep them exceptional",
   )
   assert.match(formatAgentPlan(result), /results:/)
 })
