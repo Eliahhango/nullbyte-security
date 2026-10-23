@@ -30,11 +30,121 @@ Options:
 EOF
 }
 
-say() { printf '→ %s\n' "$*"; }
-note() { printf '  %s\n' "$*"; }
-ok() { printf '  ok   %s\n' "$*"; }
-fixed() { printf '  fix  %s\n' "$*"; FIXED=$((FIXED + 1)); }
-issue() { printf '  warn %s\n' "$*" >&2; ISSUES=$((ISSUES + 1)); }
+UI_TTY=0
+[ -t 1 ] && UI_TTY=1
+
+if [ "$UI_TTY" -eq 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-dumb}" != "dumb" ]; then
+  C_GRAY=$'\033[90m'
+  C_BLUE=$'\033[34m'
+  C_GREEN=$'\033[32m'
+  C_YELLOW=$'\033[33m'
+  C_RED=$'\033[31m'
+  C_MAGENTA=$'\033[35m'
+  C_DIM=$'\033[2m'
+  C_RESET=$'\033[0m'
+else
+  C_GRAY="" C_BLUE="" C_GREEN="" C_YELLOW="" C_RED="" C_MAGENTA="" C_DIM="" C_RESET=""
+fi
+
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+  *UTF-8*|*utf8*|*UTF8*|*utf-8*) UI_UNICODE=1 ;;
+  *) UI_UNICODE=0 ;;
+esac
+if [ "$UI_UNICODE" -eq 1 ]; then
+  BAR_START="┌"; BAR="│"; BAR_END="└"
+  SYM_INFO="●"; SYM_SUCCESS="◆"; SYM_STEP="◇"; SYM_WARN="▲"; SYM_ERROR="■"; SYM_OK="✓"
+  SPIN_FRAMES=("◒" "◐" "◓" "◑")
+else
+  BAR_START="T"; BAR="|"; BAR_END="—"
+  SYM_INFO="•"; SYM_SUCCESS="*"; SYM_STEP="o"; SYM_WARN="!"; SYM_ERROR="x"; SYM_OK="+"
+  SPIN_FRAMES=("•" "o" "O" "0")
+fi
+
+ui_intro() { printf '%s  %s\n' "${C_GRAY}${BAR_START}${C_RESET}" "$*"; }
+ui_outro() { printf '%s\n%s  %s\n\n' "${C_GRAY}${BAR}${C_RESET}" "${C_GRAY}${BAR_END}${C_RESET}" "$*"; }
+ui_line() {
+  local symbol="$1" color="$2"
+  shift 2
+  printf '%s\n%s  %s\n' "${C_GRAY}${BAR}${C_RESET}" "${color}${symbol}${C_RESET}" "$*"
+}
+ui_info() { ui_line "$SYM_INFO" "$C_BLUE" "$*"; }
+ui_success() { ui_line "$SYM_SUCCESS" "$C_GREEN" "$*"; }
+ui_warn() { ui_line "$SYM_WARN" "$C_YELLOW" "$*"; }
+ui_error() { ui_line "$SYM_ERROR" "$C_RED" "$*" >&2; }
+ui_detail() { printf '%s  %s%s%s\n' "${C_GRAY}${BAR}${C_RESET}" "$C_DIM" "$*" "$C_RESET"; }
+ui_ok() { printf '%s  %s%s%s %s\n' "${C_GRAY}${BAR}${C_RESET}" "$C_GREEN" "$SYM_OK" "$C_RESET" "$*"; }
+
+SPIN_PID=""
+ui_spin_start() {
+  local msg="$1" i=0 frame dots
+  SPIN_PID=""
+  if [ "$UI_TTY" -eq 1 ]; then
+    printf '%s\n' "${C_GRAY}${BAR}${C_RESET}"
+    (
+      while :; do
+        frame="${SPIN_FRAMES[$((i % 4))]}"
+        case $((i % 4)) in
+          0) dots="" ;;
+          1) dots="." ;;
+          2) dots=".." ;;
+          *) dots="..." ;;
+        esac
+        printf '\r\033[2K%s  %s%s' "${C_MAGENTA}${frame}${C_RESET}" "$msg" "$dots"
+        i=$((i + 1))
+        sleep 0.08
+      done
+    ) &
+    SPIN_PID=$!
+  else
+    printf '%s  %s...\n' "${C_MAGENTA}${SPIN_FRAMES[0]}${C_RESET}" "$msg"
+  fi
+}
+ui_spin_stop() {
+  local msg="$1" status="${2:-0}"
+  if [ -n "$SPIN_PID" ]; then
+    kill "$SPIN_PID" 2>/dev/null || true
+    wait "$SPIN_PID" 2>/dev/null || true
+    SPIN_PID=""
+    [ "$UI_TTY" -eq 1 ] && printf '\r\033[2K'
+  fi
+  if [ "$status" -eq 0 ]; then
+    printf '%s  %s\n' "${C_GREEN}${SYM_STEP}${C_RESET}" "$msg"
+  else
+    printf '%s  %s\n' "${C_RED}${SYM_ERROR}${C_RESET}" "$msg"
+  fi
+}
+ui_spin_abort() {
+  if [ -n "$SPIN_PID" ]; then
+    kill "$SPIN_PID" 2>/dev/null || true
+    wait "$SPIN_PID" 2>/dev/null || true
+    SPIN_PID=""
+    [ "$UI_TTY" -eq 1 ] && printf '\r\033[2K'
+  fi
+}
+trap ui_spin_abort EXIT INT TERM
+
+run_spin() {
+  local start_msg="$1" done_msg="$2" fail_msg="$3"
+  shift 3
+  local log rc
+  log="$(mktemp "${TMPDIR:-/tmp}/nullbyte-install.XXXXXX")"
+  ui_spin_start "$start_msg"
+  if "$@" >"$log" 2>&1; then
+    ui_spin_stop "$done_msg"
+    rc=0
+  else
+    rc=$?
+    ui_spin_stop "$fail_msg" 1
+    cat "$log" >&2
+  fi
+  rm -f "$log"
+  return "$rc"
+}
+
+note() { ui_detail "$*"; }
+ok() { ui_ok "$*"; }
+fixed() { ui_success "$*"; FIXED=$((FIXED + 1)); }
+issue() { ui_warn "$*"; ISSUES=$((ISSUES + 1)); }
 drain_stdin() {
   if [ -z "${BASH_SOURCE[0]:-}" ]; then
     cat >/dev/null 2>&1 || true
@@ -54,6 +164,8 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+ui_intro "NullByte Security"
 
 # ---- locate or bootstrap the checkout -----------------------------------
 REPO_URL="${NULLBYTE_SECURITY_REPO:-https://github.com/Eliahhango/nullbyte-security.git}"
@@ -92,11 +204,14 @@ bootstrap_repo() {
   fi
 
   if [ -d "$REPO_DIR/.git" ]; then
-    say "updating existing checkout"
-    note "$REPO_DIR"
-    if ! GIT_TERMINAL_PROMPT=0 git -C "$REPO_DIR" pull --ff-only --quiet; then
+    ui_spin_start "Updating existing checkout"
+    if GIT_TERMINAL_PROMPT=0 git -C "$REPO_DIR" pull --ff-only --quiet; then
+      ui_spin_stop "Checkout ready"
+    else
+      ui_spin_stop "Update skipped, using existing checkout"
       note "could not fast-forward; continuing with the existing checkout"
     fi
+    note "$REPO_DIR"
     return 0
   fi
 
@@ -110,14 +225,14 @@ bootstrap_repo() {
     fi
   fi
 
-  say "cloning NullByte security"
-  note "$REPO_DIR"
   mkdir -p "$(dirname "$REPO_DIR")"
-  if ! GIT_TERMINAL_PROMPT=0 git clone --depth 1 --quiet "$REPO_URL" "$REPO_DIR"; then
-    echo "error: could not clone $REPO_URL" >&2
-    echo "       check your network, or clone the repo and run ./install.sh" >&2
+  if ! run_spin "Cloning NullByte security" "Repository ready" "Could not clone repository" \
+    env GIT_TERMINAL_PROMPT=0 git clone --depth 1 --quiet "$REPO_URL" "$REPO_DIR"; then
+    ui_error "Could not clone $REPO_URL"
+    note "check your network, or clone the repo and run ./install.sh"
     exit 1
   fi
+  note "$REPO_DIR"
 }
 
 if [ "$FROM_CURL" -eq 1 ]; then
@@ -131,12 +246,12 @@ if [ "$FROM_CURL" -eq 1 ]; then
   fi
 fi
 
-say "repo:   $REPO_DIR"
-say "config: $CONFIG_DIR"
-[ "$CHECK_ONLY" -eq 1 ] && say "mode:   check only (no changes)"
+ui_info "Repository  $REPO_DIR"
+ui_info "Config      $CONFIG_DIR"
+[ "$CHECK_ONLY" -eq 1 ] && ui_info "Mode        check only (no changes)"
 
 # ---- inspect the checkout ------------------------------------------------
-say "inspecting installation"
+ui_info "Inspecting installation"
 
 SOURCE_BROKEN=0
 for rel in \
@@ -155,27 +270,27 @@ do
 done
 
 if [ "$SOURCE_BROKEN" -eq 1 ]; then
-  echo "error: this checkout is incomplete; re-clone the repository" >&2
+  ui_error "This checkout is incomplete; re-clone the repository"
   exit 1
 fi
 
 if ! command -v node >/dev/null 2>&1; then
-  echo "error: node not found; Node.js >= 22.6.0 is required" >&2
+  ui_error "Node.js not found; >= 22.6.0 is required"
   exit 1
 fi
 
 NODE_VERSION="$(node -p 'process.versions.node' 2>/dev/null || true)"
 IFS=. read -r NODE_MAJOR NODE_MINOR _ <<< "${NODE_VERSION:-0.0.0}"
 if [ "${NODE_MAJOR:-0}" -lt 22 ] || { [ "${NODE_MAJOR:-0}" -eq 22 ] && [ "${NODE_MINOR:-0}" -lt 6 ]; }; then
-  echo "error: Node $NODE_VERSION found; >= 22.6.0 is required" >&2
-  echo "       (the test runner uses --experimental-strip-types)" >&2
+  ui_error "Node $NODE_VERSION found; >= 22.6.0 is required"
+  note "the test runner uses --experimental-strip-types"
   exit 1
 fi
 ok "node $NODE_VERSION"
 
 if ! command -v npm >/dev/null 2>&1; then
   if [ "$RUN_DEPS" -eq 1 ]; then
-    echo "error: npm not found; install npm or rerun with --no-deps" >&2
+    ui_error "npm not found; install npm or rerun with --no-deps"
     exit 1
   fi
   note "npm not found (dependency install skipped)"
@@ -273,43 +388,47 @@ else
 fi
 
 if [ "$ISSUES" -eq 0 ]; then
-  say "inspection: installation healthy"
+  ui_success "Inspection passed: installation healthy"
 else
-  say "inspection: $ISSUES issue(s) found"
+  ui_warn "Inspection found $ISSUES issue(s)"
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
   drain_stdin
   if [ "$ISSUES" -eq 0 ]; then
-    echo "check passed: installation healthy"
+    ui_outro "Done"
     exit 0
   fi
-  echo "check failed: run the installer without --check to repair the issues above" >&2
+  note "run the installer without --check to repair the issues above"
+  ui_outro "Done with issues"
   exit 1
 fi
 
 # ---- repair dependencies -------------------------------------------------
+install_plugin_deps() { (cd "$REPO_DIR" && npm install --silent --no-audit --no-fund); }
+install_mcp_deps() { (cd "$REPO_DIR/mcp/stitch" && npm install --silent --no-audit --no-fund); }
+
 if [ "$RUN_DEPS" -eq 1 ]; then
   if [ "$NEED_DEPS" -eq 1 ]; then
-    say "repairing missing plugin dependencies"
+    dep_label="Installing plugin dependencies"
   else
-    say "refreshing plugin dependencies"
+    dep_label="Refreshing plugin dependencies"
   fi
-  (cd "$REPO_DIR" && npm install --silent --no-audit --no-fund)
+  run_spin "$dep_label" "Plugin dependencies ready" "Plugin dependency install failed" install_plugin_deps
   if [ "$NEED_DEPS" -eq 1 ]; then
-    fixed "plugin dependencies installed"
+    FIXED=$((FIXED + 1))
     NEED_DEPS=0
   fi
 
   if [ -f "$REPO_DIR/mcp/stitch/package.json" ]; then
     if [ "$NEED_MCP_DEPS" -eq 1 ]; then
-      say "repairing missing Stitch MCP dependencies"
+      mcp_label="Installing Stitch MCP dependencies"
     else
-      say "refreshing Stitch MCP dependencies"
+      mcp_label="Refreshing Stitch MCP dependencies"
     fi
-    (cd "$REPO_DIR/mcp/stitch" && npm install --silent --no-audit --no-fund)
+    run_spin "$mcp_label" "Stitch MCP dependencies ready" "Stitch MCP dependency install failed" install_mcp_deps
     if [ "$NEED_MCP_DEPS" -eq 1 ]; then
-      fixed "Stitch MCP dependencies installed"
+      FIXED=$((FIXED + 1))
       NEED_MCP_DEPS=0
     fi
   fi
@@ -319,47 +438,51 @@ fi
 
 # ---- tests ---------------------------------------------------------------
 if [ "$RUN_TESTS" -eq 1 ]; then
-  say "running tests"
   TEST_LOG="$(mktemp "${TMPDIR:-/tmp}/nullbyte-install.XXXXXX")"
+  ui_spin_start "Running tests"
   if ! (cd "$REPO_DIR" && npm test --silent >"$TEST_LOG" 2>&1); then
+    ui_spin_stop "Tests failed" 1
     cat "$TEST_LOG" >&2
     rm -f "$TEST_LOG"
-    echo "error: test suite failed; installation left in place for inspection" >&2
+    ui_error "Test suite failed; installation left in place for inspection"
     exit 1
   fi
-  tail -n 10 "$TEST_LOG"
+  ui_spin_stop "Tests passed"
+  TEST_SUMMARY="$(awk '/^ℹ (tests|pass|fail) / { printf "%s%s %s", sep, $2, $3; sep="  ·  " }' "$TEST_LOG")"
+  [ -n "$TEST_SUMMARY" ] && note "$TEST_SUMMARY"
   rm -f "$TEST_LOG"
 fi
 
 # ---- verify the result ---------------------------------------------------
-say "verifying install"
+ui_info "Verifying installation"
 for path in \
   "$CONFIG_DIR/security-lib" \
   "$CONFIG_DIR/plugin/nullbyte-security.ts"
 do
   if [ ! -e "$path" ]; then
-    echo "error: missing $path" >&2
+    ui_error "Missing $path"
     exit 1
   fi
 done
 
 if [ "$(readlink "$CONFIG_DIR/security-lib")" != "$REPO_DIR/security-lib" ]; then
-  echo "error: security-lib still does not point at this checkout" >&2
+  ui_error "security-lib still does not point at this checkout"
   exit 1
 fi
 if [ "$(readlink "$CONFIG_DIR/plugin/nullbyte-security.ts")" != "$REPO_DIR/plugin/nullbyte-security.ts" ]; then
-  echo "error: plugin still does not point at this checkout" >&2
+  ui_error "plugin still does not point at this checkout"
   exit 1
 fi
+ui_success "Installation verified"
 
 UNRESOLVED=$((ISSUES - FIXED))
-echo
+note "Re-run ./install.sh anytime to inspect or repair"
+note "Use ./install.sh --check for an inspection-only pass"
+note "Config and engagement data are preserved"
+note "Next: cd <project> && nullbyte run \"recon example.com\""
 if [ "$UNRESOLVED" -le 0 ]; then
-  echo "done. NullByte security layer installed."
+  ui_outro "Done"
 else
-  echo "done with $UNRESOLVED unresolved issue(s); see the messages above." >&2
+  note "$UNRESOLVED unresolved issue(s); see the messages above"
+  ui_outro "Done with issues"
 fi
-echo "  re-run ./install.sh anytime to inspect or repair"
-echo "  use ./install.sh --check for an inspection-only pass"
-echo "  config and engagement data are preserved"
-echo "  next: cd <project> && nullbyte run \"recon example.com\""
