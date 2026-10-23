@@ -9,6 +9,8 @@
  */
 
 import { spawn } from "node:child_process"
+import { withExclusiveHostSlot } from "../ratelimit.ts"
+import { formatElapsed, startProgress } from "../progress.ts"
 import { readFileSync, unlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -29,6 +31,12 @@ export interface ScanRunResult {
 
 const MAX_STDOUT = 2 * 1024 * 1024
 
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
+}
+
 export interface RunOptions {
   timeoutMs?: number
   maxOutputBytes?: number
@@ -43,13 +51,31 @@ export interface RunOptions {
    * an artifact redacted here can never be recovered by a later report.
    */
   includeSecrets?: boolean
+  /**
+   * Target host, when this run contacts one. Set, the run takes the host's
+   * exclusive slot: scanners are long, loud, and the thing an IPS reacts to, so
+   * two at once against one host is never the intent.
+   */
+  host?: string
+  /** Show the Clack-style live progress line while the scanner runs. */
+  progress?: boolean | string
 }
 
-/** Run an argv vector with a hard timeout and output caps. No shell involved. */
+/**
+ * Run an argv vector with a hard timeout and output caps. No shell involved.
+ *
+ * When `opts.host` is set the run is paced under the engagement's host budget and
+ * taken exclusively, so two scanners never hammer one target at once.
+ */
 export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Promise<ScanRunResult> {
+  const started = Date.now()
+  const run = () => runArgvRaw(bin, args, opts, started)
+  return opts.host ? withExclusiveHostSlot(opts.host, run) : run()
+}
+
+function runArgvRaw(bin: string, args: string[], opts: RunOptions, started: number): Promise<ScanRunResult> {
   const timeoutMs = opts.timeoutMs ?? 120000
   const maxBytes = opts.maxOutputBytes ?? MAX_STDOUT
-  const started = Date.now()
   const printable = [bin, ...args].map((a) => (/[^\w@%+=:,./-]/.test(a) ? JSON.stringify(a) : a)).join(" ")
 
   return new Promise<ScanRunResult>((resolve) => {
@@ -77,6 +103,15 @@ export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Pro
       return
     }
 
+    const label = typeof opts.progress === "string" ? opts.progress : opts.progress ? `${bin.split(/[\\/]/).pop() ?? bin}${opts.host ? ` ${opts.host}` : ""}` : ""
+    const live = label ? startProgress(label, { timer: true }) : undefined
+    let received = 0
+    const updateLive = (bytes: number) => {
+      if (!live) return
+      received += bytes
+      live.update(`${label} · ${formatBytes(received)} received`)
+    }
+
     const timer = setTimeout(() => {
       timedOut = true
       try {
@@ -90,6 +125,10 @@ export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Pro
       if (settled) return
       settled = true
       clearTimeout(timer)
+      if (live) {
+        if (exitCode === 0 && !timedOut) live.succeed(`${label} · ${formatElapsed(Date.now() - started).slice(1, -1)}`)
+        else live.fail(`${label} · ${timedOut ? "timed out" : `exit ${exitCode}`}`)
+      }
       resolve({
         ok: exitCode === 0 && !timedOut,
         command: printable,
@@ -104,6 +143,7 @@ export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Pro
     }
 
     child.stdout?.on("data", (d: Buffer) => {
+      updateLive(d.length)
       if (stdout.length + d.length > maxBytes) {
         truncated = true
         stdout += d.toString("utf8").slice(0, Math.max(0, maxBytes - stdout.length))
@@ -112,6 +152,7 @@ export function runArgv(bin: string, args: string[], opts: RunOptions = {}): Pro
       stdout += d.toString("utf8")
     })
     child.stderr?.on("data", (d: Buffer) => {
+      updateLive(d.length)
       if (stderr.length > 64 * 1024) return
       stderr += d.toString("utf8")
     })
@@ -200,7 +241,7 @@ export async function runNmap(
   opts: RunOptions = {},
 ): Promise<{ run: ScanRunResult; result?: NmapResult }> {
   const args = buildNmapArgs(host, profile, ports)
-  const run = await runArgv(bin, args, { timeoutMs: opts.timeoutMs ?? 300000, includeSecrets: opts.includeSecrets })
+  const run = await runArgv(bin, args, { ...opts, timeoutMs: opts.timeoutMs ?? 300000, host })
   if (!run.stdout.trim()) return { run }
   return { run, result: parseNmapXml(run.stdout) }
 }

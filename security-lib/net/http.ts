@@ -12,6 +12,7 @@
 
 import http from "node:http"
 import https from "node:https"
+import { withHostSlot } from "../ratelimit.ts"
 
 export interface HttpHop {
   url: string
@@ -162,7 +163,8 @@ export async function httpProbe(url: string, opts: HttpProbeOptions = {}): Promi
 
     let res: RawResponse
     try {
-      res = await requestOnce(current, opts)
+      // paced per host: a redirect chain is several requests to the same target
+      res = await withHostSlot(new URL(current).hostname, () => requestOnce(current, opts))
     } catch (e) {
       errors.push(`${current}: ${e instanceof Error ? e.message : String(e)}`)
       return {

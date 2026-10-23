@@ -45,7 +45,7 @@ export const NullByteSecurity: Plugin = async (input) => {
 
   return {
     // ---- capability: the sec_* toolset ----
-    tool: buildSecurityTools(),
+    tool: buildSecurityTools({ client: input.client as any }),
 
     // ---- layer 1: native permission rules for destructive commands ----
     config: async (cfg) => {

@@ -79,6 +79,17 @@ curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh |
 Requirements: Linux or macOS, `git`, Node.js >= 22.6, and the NullByte CLI.
 Set `NULLBYTE_SECURITY_HOME=/path` to use a different checkout location.
 
+## `UNINSTALL`
+
+Remove the installed plugin links and the managed checkout, while keeping config
+and every project's `.nullbyte/security/` data:
+
+```bash
+curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh | bash -s -- --uninstall
+```
+
+Add `--purge` to also remove `~/.config/nullbyte`. Project data is never touched.
+
 ## `KILL CHAIN`
 
 ```text
@@ -87,11 +98,15 @@ Set `NULLBYTE_SECURITY_HOME=/path` to use a different checkout location.
     └────────────── hash-chained audit trail ───────────────┘
 ```
 
+Long scans render a live progress line with elapsed time and counters; set
+`NULLBYTE_NO_PROGRESS=1` to disable it.
+
 ## `ARSENAL`
 
 | Tool | Function |
 |---|---|
 | `sec_scope` | authorization mode; check a target; write a starter scope |
+| `sec_agents` | plan, spawn and monitor multiple subagents with parallel work and dependencies |
 | `sec_recon` | DNS, HTTP, TLS, headers and fingerprinting; archives raw responses as evidence |
 | `sec_ports` | bounded TCP connect scan and banner grab |
 | `sec_scan` | nmap, nuclei, nikto, whatweb, sslscan and sqlmap adapters |

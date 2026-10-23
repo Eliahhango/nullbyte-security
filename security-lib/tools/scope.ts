@@ -9,6 +9,7 @@ import { tool } from "@opencode-ai/plugin"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { loadScope, scopeTemplate, validateScope } from "../config.ts"
 import { authorize, describeScope } from "../scope.ts"
+import { describeLimitsOf } from "../ratelimit.ts"
 import { writeAudit } from "../audit.ts"
 import { splitTarget, projectRootFor, type ToolCtxLike } from "./shared.ts"
 import { ensureTargetQuietly } from "../target-dir.ts"
@@ -102,6 +103,8 @@ export const secScope = tool({
     const problems = validateScope(raw)
     return [
       describeScope(loaded.scope, loaded.source, loaded.warnings),
+      "",
+      `pacing: ${describeLimitsOf(loaded.scope.limits)}`,
       "",
       hasFile
         ? problems.length

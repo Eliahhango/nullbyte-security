@@ -6,6 +6,8 @@
 import { tool } from "@opencode-ai/plugin"
 import { COMMON_PORTS, parsePortSpec, scanPorts } from "../net/ports.ts"
 import { loadScope } from "../config.ts"
+import { configureLimits, describeLimits, isPaced } from "../ratelimit.ts"
+import { startProgress } from "../progress.ts"
 import { saveEvidence } from "../evidence.ts"
 import { enforcePorts, splitTarget, type ToolCtxLike } from "./shared.ts"
 
@@ -46,34 +48,49 @@ export const secPorts = tool({
       purpose: `connect scan of ${ports.length} ports`,
     })
 
-    const root = loadScope(c.worktree).paths.root
+    const loaded = loadScope(c.worktree)
+    const limits = configureLimits(loaded.scope.limits)
+    const root = loaded.paths.root
     c.metadata?.({ title: `sec_ports ${target.host} (${ports.length} ports)` })
 
-    const started = Date.now()
-    const open = await scanPorts(target.host, ports, {
-      concurrency: args.concurrency,
-      timeoutMs: args.timeout_ms,
-      grabBanner: args.grab_banner,
-    })
-    const durationMs = Date.now() - started
+    const progress = startProgress(`tcp ${target.host}`, { timer: true })
+    try {
+      const started = Date.now()
+      const open = await scanPorts(target.host, ports, {
+        concurrency: args.concurrency,
+        timeoutMs: args.timeout_ms,
+        grabBanner: args.grab_banner,
+        onProgress: (state) => {
+          progress.update(`tcp ${target.host} · ${state.done}/${state.total} ports · ${state.open} open`)
+        },
+      })
+      const durationMs = Date.now() - started
 
-    const report = [
-      `connect scan ${target.host} — ${ports.length} ports probed in ${durationMs}ms, ${open.length} open`,
-      capped ? `note: port list capped at ${MAX_PORTS} entries for this call` : "",
-      ...open.map(
-        (p) => `  ${p.port}/tcp open  ${p.service ?? "unknown"}${p.banner ? `  banner: ${p.banner.slice(0, 120)}` : ""}  (${p.latencyMs}ms)`,
-      ),
-    ]
-      .filter(Boolean)
-      .join("\n")
+      const report = [
+        `connect scan ${target.host} — ${ports.length} ports probed in ${durationMs}ms, ${open.length} open`,
+        capped ? `note: port list capped at ${MAX_PORTS} entries for this call` : "",
+        isPaced(limits) ? `pacing: ${describeLimits()}` : "",
+        ...open.map(
+          (p) => `  ${p.port}/tcp open  ${p.service ?? "unknown"}${p.banner ? `  banner: ${p.banner.slice(0, 120)}` : ""}  (${p.latencyMs}ms)`,
+        ),
+      ]
+        .filter(Boolean)
+        .join("\n")
 
-    const ev = saveEvidence(root, {
-      sessionID: c.sessionID,
-      source: "sec_ports",
-      label: `connect scan ${target.host}`,
-      target: target.host,
-      content: report,
-    })
-    return ev.record ? `${report}\nraw evidence: ${ev.record.id}` : report
+      const ev = saveEvidence(root, {
+        sessionID: c.sessionID,
+        source: "sec_ports",
+        label: `connect scan ${target.host}`,
+        target: target.host,
+        content: report,
+      })
+      progress.succeed(`tcp ${target.host} · ${open.length} open · ${(durationMs / 1000).toFixed(1)}s`)
+      return ev.record ? `${report}\nraw evidence: ${ev.record.id}` : report
+    } catch (error) {
+      progress.fail(`tcp ${target.host} failed`)
+      throw error
+    } finally {
+      progress.stop()
+    }
   },
 })

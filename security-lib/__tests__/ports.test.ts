@@ -75,3 +75,13 @@ test("concurrency is bounded and results are sorted", async () => {
   const res = await scanPorts("127.0.0.1", [1, 2, 3], { concurrency: 999, timeoutMs: 400 })
   assert.deepEqual(res, [])
 })
+
+test("scanPorts reports per-port progress", async () => {
+  const states: Array<{ done: number; total: number; open: number }> = []
+  await scanPorts("127.0.0.1", [1, 2], {
+    timeoutMs: 300,
+    onProgress: (state) => states.push(state),
+  })
+  assert.equal(states.length, 2)
+  assert.deepEqual(states.at(-1), { done: 2, total: 2, open: 0 })
+})

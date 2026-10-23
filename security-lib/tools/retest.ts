@@ -17,6 +17,7 @@ import { analyzeCommand, tokenize } from "../cmdsafe.ts"
 import { saveEvidence } from "../evidence.ts"
 import { getFinding, recordRetest } from "../findings.ts"
 import type { Intensity, VerificationStatus } from "../types.ts"
+import { configureLimits, withExclusiveHostSlot } from "../ratelimit.ts"
 import { enforce, scopeFor, splitTarget, type ToolCtxLike } from "./shared.ts"
 
 const STATUSES = ["verified", "refuted", "inconclusive"] as const
@@ -42,7 +43,9 @@ export const secRetest = tool({
   },
   async execute(args, ctx: any) {
     const c = ctx as ToolCtxLike
-    const root = scopeFor(c.worktree).paths.root
+    const loaded = scopeFor(c.worktree)
+    configureLimits(loaded.scope.limits)
+    const root = loaded.paths.root
 
     const finding = getFinding(root, args.id)
     if (!finding) return `error: finding ${args.id} not found`
@@ -111,12 +114,18 @@ export const secRetest = tool({
     if (!argv.length) return "error: no executable found in command"
     const timeout = args.timeout_ms ?? 60_000
 
-    const r = spawnSync(argv[0]!, argv.slice(1), {
-      encoding: "utf8",
-      timeout,
-      maxBuffer: 8 * 1024 * 1024,
-      cwd: c.worktree,
-    })
+    // A retest contacts the target exactly like a scan does, so it is paced the
+    // same way. spawnSync blocks the event loop, so the slot is taken before it
+    // runs rather than around it concurrently — the wait is what spaces attempts.
+    const pacingHost = splitTarget(finding.target).host
+    const r = await withExclusiveHostSlot(pacingHost, async () =>
+      spawnSync(argv[0]!, argv.slice(1), {
+        encoding: "utf8",
+        timeout,
+        maxBuffer: 8 * 1024 * 1024,
+        cwd: c.worktree,
+      }),
+    )
     if (r.error) {
       const e = r.error as NodeJS.ErrnoException
       if (e.code === "ENOENT") return `refused: '${argv[0]}' is not installed or not on PATH`

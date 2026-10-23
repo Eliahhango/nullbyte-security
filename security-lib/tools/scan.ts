@@ -23,6 +23,7 @@ import {
 import { saveEvidence } from "../evidence.ts"
 import { parsePortSpec } from "../net/ports.ts"
 import { portAllowance } from "../scope.ts"
+import { configureLimits } from "../ratelimit.ts"
 import { writeTargetLog, type TargetLogResult } from "../target-dir.ts"
 import { enforce, enforcePorts, projectRootFor, scopeFor, splitTarget, type ToolCtxLike } from "./shared.ts"
 import type { Intensity, Severity } from "../types.ts"
@@ -76,6 +77,7 @@ export const secScan = tool({
       toolId === "nmap" && args.profile === "intrusive" ? "intrusive" : toolId === "sqlmap" ? "intrusive" : "safe-active"
 
     const loaded = scopeFor(c.worktree)
+    configureLimits(loaded.scope.limits)
     let ports = args.ports ? parsePortSpec(args.ports) : undefined
 
     // A scanner with no explicit port list falls back to an implicit default set
@@ -118,7 +120,7 @@ export const secScan = tool({
 
     const keepLogs = args.logs === true
     const includeSecrets = args.include_secrets !== false
-    const scanOpts = { timeoutMs, includeSecrets }
+    const scanOpts = { timeoutMs, includeSecrets, host: target.host, progress: `${toolId} ${target.host}` }
 
     /**
      * Persist the scanner's raw stdout/stderr under the target's own directory.

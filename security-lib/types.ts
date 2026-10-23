@@ -39,6 +39,8 @@ export interface ScopeEntry {
   note?: string
 }
 
+import type { RateLimits } from "./ratelimit.ts"
+
 export interface Scope {
   engagement: string
   authorized_by?: string
@@ -63,6 +65,16 @@ export interface Scope {
   allow_model_scope_edit: boolean
   /** per-engagement override of destructive-operation approval */
   require_approval_for_intrusive: boolean
+  /**
+   * Pacing for everything that contacts a target. Absent means the defaults
+   * (concurrency 64, no added delay) — i.e. exactly the behaviour before this
+   * existed. Set it when the engagement has a fragile or monitored target:
+   * a shared host, a production service, a client whose SOC is watching.
+   *
+   * Partial on purpose: a project file may set only `per_host_rps` and inherit
+   * the rest from the operator's global policy.
+   */
+  limits?: Partial<RateLimits>
 }
 
 export interface Decision {

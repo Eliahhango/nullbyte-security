@@ -8,6 +8,7 @@
 
 import { existsSync, readFileSync } from "node:fs"
 import type { Intensity, Scope, ScopeEntry } from "./types.ts"
+import type { RateLimits } from "./ratelimit.ts"
 import { globalPolicyPath, engagementPaths, type EngagementPaths } from "./paths.ts"
 
 export interface LoadedScope {
@@ -34,6 +35,22 @@ function asArray(v: unknown): string[] {
   if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string")
   if (typeof v === "string" && v.trim()) return [v.trim()]
   return []
+}
+
+/**
+ * Keep only the pacing keys the operator actually wrote. Missing keys stay
+ * missing so a project file can override one field without resetting the rest.
+ * Values are clamped by ratelimit.ts, not here.
+ */
+export function normalizeLimits(raw: unknown): Partial<RateLimits> | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as Record<string, unknown>
+  const out: Partial<RateLimits> = {}
+  for (const key of ["globalConcurrency", "perHostConcurrency", "perHostIntervalMs", "perHostRps"] as const) {
+    const v = o[key]
+    if (typeof v === "number" && Number.isFinite(v)) out[key] = v
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 function normalizeEntry(raw: unknown): ScopeEntry | null {
@@ -99,6 +116,7 @@ export function normalizeScope(raw: unknown): Scope {
       typeof o.require_approval_for_intrusive === "boolean"
         ? o.require_approval_for_intrusive
         : DEFAULT_SCOPE.require_approval_for_intrusive,
+    limits: normalizeLimits(o.limits),
   }
 }
 
@@ -125,7 +143,10 @@ export function loadScope(worktree: string): LoadedScope {
     const { value, error } = readJson(globalPath)
     if (error) warnings.push(`global policy ${globalPath} is unreadable: ${error}`)
     else {
-      scope = { ...scope, ...normalizeScope(value) }
+      const normalized = normalizeScope(value)
+      // limits merge field by field: a project that paces one host should not
+      // discard the operator's global concurrency ceiling
+      scope = { ...scope, ...normalized, limits: { ...scope.limits, ...normalized.limits } }
       source = globalPath
     }
   }
@@ -139,10 +160,17 @@ export function loadScope(worktree: string): LoadedScope {
       warnings.push(...problems.map((p) => `scope: ${p}`))
       const normalized = normalizeScope(value)
       // engagement overrides global, but never silently enables model edits
-      scope = { ...scope, ...normalized, allow_model_scope_edit: scope.allow_model_scope_edit && normalized.allow_model_scope_edit }
+      scope = {
+        ...scope,
+        ...normalized,
+        limits: { ...scope.limits, ...normalized.limits },
+        allow_model_scope_edit: scope.allow_model_scope_edit && normalized.allow_model_scope_edit,
+      }
       source = paths.scope
     }
   }
+
+  if (scope.limits && Object.keys(scope.limits).length === 0) delete scope.limits
 
   return { scope, source, warnings, paths }
 }
@@ -218,5 +246,14 @@ export function scopeTemplate(): Scope {
     allow_private: true,
     allow_model_scope_edit: false,
     require_approval_for_intrusive: true,
+    /**
+     * Pacing for anything that contacts a target. Omit the whole block for the
+     * defaults; lower the numbers for a fragile or monitored host.
+     */
+    limits: {
+      globalConcurrency: 8,
+      perHostConcurrency: 4,
+      perHostIntervalMs: 250,
+    },
   }
 }

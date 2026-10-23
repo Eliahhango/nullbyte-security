@@ -2,6 +2,7 @@
  * Assembles every sec_* tool into the record the plugin registers.
  */
 
+import { createSecAgents } from "./agents.ts"
 import { secScope } from "./scope.ts"
 import { secRecon } from "./recon.ts"
 import { secPorts } from "./ports.ts"
@@ -12,9 +13,11 @@ import { secFinding } from "./findings.ts"
 import { secRetest } from "./retest.ts"
 import { secReport } from "./report.ts"
 import { secMethodology, secAudit } from "./knowledge.ts"
+import type { AgentClient } from "../agents.ts"
 
 export const SECURITY_TOOL_IDS = [
   "sec_scope",
+  "sec_agents",
   "sec_recon",
   "sec_ports",
   "sec_scan",
@@ -29,9 +32,14 @@ export const SECURITY_TOOL_IDS = [
 
 export type SecurityToolId = (typeof SECURITY_TOOL_IDS)[number]
 
-export function buildSecurityTools(): Record<string, any> {
+export interface BuildSecurityToolsOptions {
+  client?: AgentClient
+}
+
+export function buildSecurityTools(options: BuildSecurityToolsOptions = {}): Record<string, any> {
   return {
     sec_scope: secScope,
+    sec_agents: createSecAgents(options.client),
     sec_recon: secRecon,
     sec_ports: secPorts,
     sec_scan: secScan,

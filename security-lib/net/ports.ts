@@ -8,6 +8,7 @@
  */
 
 import net from "node:net"
+import { hostConcurrencyCap, withHostSlot } from "../ratelimit.ts"
 
 export interface PortResult {
   port: number
@@ -21,6 +22,7 @@ export interface ScanOptions {
   concurrency?: number
   timeoutMs?: number
   grabBanner?: boolean
+  onProgress?: (state: { done: number; total: number; open: number }) => void
 }
 
 export const COMMON_PORTS = [
@@ -163,20 +165,29 @@ function probePort(host: string, port: number, timeoutMs: number, grabBanner: bo
   })
 }
 
-/** Scan `ports` on `host` with bounded concurrency. Returns only open ports. */
+/**
+ * Scan `ports` on `host` with bounded concurrency. Returns only open ports.
+ *
+ * Each probe goes through the engagement's per-host budget, so a port scan and a
+ * concurrent recon against the same host share one allowance rather than each
+ * politely limiting itself.
+ */
 export async function scanPorts(host: string, ports: number[], opts: ScanOptions = {}): Promise<PortResult[]> {
-  const concurrency = Math.max(1, Math.min(opts.concurrency ?? 64, 256))
+  const concurrency = hostConcurrencyCap(opts.concurrency ?? 64)
   const timeoutMs = Math.max(200, Math.min(opts.timeoutMs ?? 1500, 10000))
   const grabBanner = opts.grabBanner ?? false
   const queue = [...ports]
   const results: PortResult[] = []
+  let done = 0
 
   async function worker(): Promise<void> {
     for (;;) {
       const port = queue.shift()
       if (port === undefined) return
-      const r = await probePort(host, port, timeoutMs, grabBanner)
+      const r = await withHostSlot(host, () => probePort(host, port, timeoutMs, grabBanner))
       if (r.open) results.push(r)
+      done += 1
+      opts.onProgress?.({ done, total: ports.length, open: results.length })
     }
   }
 
