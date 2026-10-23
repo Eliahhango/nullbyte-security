@@ -1,66 +1,105 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-label="nullbyte-security">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="nullbyte-security">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#070a0f"/>
-      <stop offset="0.55" stop-color="#0b1220"/>
-      <stop offset="1" stop-color="#0f172a"/>
+      <stop offset="0" stop-color="#05070a"/>
+      <stop offset="0.55" stop-color="#080d14"/>
+      <stop offset="1" stop-color="#0b1220"/>
     </linearGradient>
-    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+    <linearGradient id="neon" x1="0" y1="0" x2="1" y2="0">
       <stop offset="0" stop-color="#22d3ee"/>
       <stop offset="1" stop-color="#4ade80"/>
     </linearGradient>
-    <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse">
-      <path d="M36 0H0V36" fill="none" stroke="#94a3b8" stroke-opacity="0.06"/>
+    <pattern id="grid" width="34" height="34" patternUnits="userSpaceOnUse">
+      <path d="M34 0H0V34" fill="none" stroke="#22c55e" stroke-opacity="0.055"/>
     </pattern>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="1" fill="#000" opacity="0.22"/>
+    </pattern>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
     <style>
-      @keyframes pulse {
-        0%, 100% { opacity: .18; transform: scale(1); }
-        50% { opacity: .34; transform: scale(1.08); }
+      @keyframes flow { to { stroke-dashoffset: -260; } }
+      @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+      @keyframes flicker {
+        0%, 100% { opacity: 1; }
+        48% { opacity: 1; }
+        50% { opacity: .72; }
+        52% { opacity: 1; }
       }
-      @keyframes blink {
-        0%, 49% { opacity: 1; }
-        50%, 100% { opacity: 0; }
+      @keyframes glitchA {
+        0%, 90%, 100% { transform: translate(0, 0); }
+        92% { transform: translate(-3px, 1px); }
+        94% { transform: translate(2px, -1px); }
+        96% { transform: translate(-1px, 0); }
       }
-      @keyframes slide {
-        from { opacity: 0; transform: translateY(8px); }
-        to { opacity: 1; transform: translateY(0); }
+      @keyframes glitchB {
+        0%, 88%, 100% { transform: translate(0, 0); }
+        90% { transform: translate(3px, -1px); }
+        93% { transform: translate(-2px, 1px); }
+        97% { transform: translate(1px, 0); }
       }
-      .orb { animation: pulse 6s ease-in-out infinite; transform-origin: center; }
-      .cursor { animation: blink 1.1s step-end infinite; }
-      .fade { opacity: 1; animation: slide .8s ease-out both; }
-      .d1 { animation-delay: .15s; }
-      .d2 { animation-delay: .35s; }
-      .d3 { animation-delay: .55s; }
-      .d4 { animation-delay: .75s; }
+      .stream { stroke-dasharray: 5 19; animation: flow 7s linear infinite; }
+      .cursor { animation: blink 1.05s step-end infinite; }
+      .flicker { animation: flicker 5.5s infinite; }
+      .glitch-a { fill: #22d3ee; opacity: .35; animation: glitchA 4.2s infinite; }
+      .glitch-b { fill: #ff2d55; opacity: .28; animation: glitchB 4.6s infinite; }
       @media (prefers-reduced-motion: reduce) {
-        .orb, .cursor, .fade { animation: none; opacity: 1; }
+        .stream, .cursor, .flicker, .glitch-a, .glitch-b { animation: none; opacity: 1; }
       }
+      text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
     </style>
   </defs>
 
-  <rect width="1200" height="340" fill="url(#bg)"/>
-  <rect width="1200" height="340" fill="url(#grid)"/>
-  <circle class="orb" cx="1020" cy="70" r="170" fill="#22d3ee" opacity=".2"/>
-  <circle class="orb" cx="1120" cy="280" r="150" fill="#4ade80" opacity=".16" style="animation-delay:2s"/>
+  <rect width="1200" height="360" fill="url(#bg)"/>
+  <rect width="1200" height="360" fill="url(#grid)"/>
 
-  <g class="fade d1">
-    <text x="72" y="118" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="62" font-weight="700">nullbyte-security</text>
+  <g stroke="url(#neon)" stroke-width="1.2" stroke-linecap="round" opacity=".28">
+    <line class="stream" x1="70" y1="0" x2="70" y2="360" style="animation-delay:-1s"/>
+    <line class="stream" x1="160" y1="0" x2="160" y2="360" style="animation-delay:-4s"/>
+    <line class="stream" x1="250" y1="0" x2="250" y2="360" style="animation-delay:-2.5s"/>
+    <line class="stream" x1="360" y1="0" x2="360" y2="360" style="animation-delay:-6s"/>
+    <line class="stream" x1="470" y1="0" x2="470" y2="360" style="animation-delay:-3s"/>
+    <line class="stream" x1="590" y1="0" x2="590" y2="360" style="animation-delay:-5.5s"/>
+    <line class="stream" x1="700" y1="0" x2="700" y2="360" style="animation-delay:-1.8s"/>
+    <line class="stream" x1="820" y1="0" x2="820" y2="360" style="animation-delay:-4.8s"/>
+    <line class="stream" x1="930" y1="0" x2="930" y2="360" style="animation-delay:-2s"/>
+    <line class="stream" x1="1040" y1="0" x2="1040" y2="360" style="animation-delay:-6.5s"/>
+    <line class="stream" x1="1130" y1="0" x2="1130" y2="360" style="animation-delay:-3.8s"/>
   </g>
 
-  <g class="fade d2">
-    <text x="76" y="162" fill="#94a3b8" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="20" letter-spacing=".5">Agentic pentesting for the NullByte CLI</text>
+  <rect width="1200" height="360" fill="url(#scan)" opacity=".55"/>
+
+  <text x="70" y="52" fill="#4ade80" font-size="13" letter-spacing="2">[ NULLBYTE // SECURITY LAYER ]</text>
+  <text x="1130" y="52" text-anchor="end" fill="#ff2d55" font-size="13" letter-spacing="1">AUTHORIZED USE ONLY</text>
+
+  <g class="flicker">
+    <text class="glitch-a" x="70" y="152" font-size="64" font-weight="700" letter-spacing="1">nullbyte-security</text>
+    <text class="glitch-b" x="70" y="152" font-size="64" font-weight="700" letter-spacing="1">nullbyte-security</text>
+    <text x="70" y="152" fill="#e5e7eb" font-size="64" font-weight="700" letter-spacing="1" filter="url(#glow)">nullbyte-security</text>
   </g>
 
-  <g class="fade d3">
-    <rect x="72" y="198" width="700" height="58" rx="12" fill="#0b1220" stroke="#1e293b"/>
-    <circle cx="96" cy="227" r="5" fill="#ef4444"/>
-    <circle cx="114" cy="227" r="5" fill="#f59e0b"/>
-    <circle cx="132" cy="227" r="5" fill="#22c55e"/>
-    <text x="154" y="233" fill="#4ade80" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">$</text>
-    <text x="174" y="233" fill="#e2e8f0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16">nullbyte run "recon app.acme.test"</text>
+  <text x="72" y="192" fill="#22d3ee" font-size="18" letter-spacing="4">AGENTIC OFFENSIVE SECURITY</text>
+
+  <g>
+    <rect x="70" y="224" width="760" height="58" rx="8" fill="#070b10" stroke="#1f3b2a"/>
+    <circle cx="92" cy="253" r="5" fill="#ff2d55"/>
+    <circle cx="110" cy="253" r="5" fill="#f59e0b"/>
+    <circle cx="128" cy="253" r="5" fill="#22c55e"/>
+    <text x="150" y="259" fill="#4ade80" font-size="15">$</text>
+    <text x="170" y="259" fill="#d1fae5" font-size="15">nullbyte run "recon app.acme.test"</text>
   </g>
 
-  <g class="fade d4">
-    <text x="76" y="300" fill="#64748b" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">scope enforcement · recon · ports · scanners · sast · evidence · findings · reports</text>
+  <text x="70" y="320" fill="#64748b" font-size="13" letter-spacing="1">SCOPE-LOCKED // EVIDENCE-BACKED // AUDIT-CHAINED // CVSS-SCORED</text>
+
+  <g fill="#4ade80" opacity=".7">
+    <rect x="1120" y="300" width="3" height="3"/>
+    <rect x="1132" y="312" width="2" height="2"/>
+    <rect x="1110" y="326" width="2" height="2"/>
+    <rect x="1140" y="292" width="2" height="2"/>
   </g>
 </svg>
