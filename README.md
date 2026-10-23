@@ -61,21 +61,23 @@ findings cannot be closed without proof.
 ## Install
 
 ```bash
-git clone https://github.com/Eliahhango/nullbyte-security.git ~/nullbyte-security
-cd ~/nullbyte-security && ./install.sh
+curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh | bash
 ```
 
-`install.sh` inspects the checkout and installed files first, then repairs
-missing directories, broken symlinks and dependencies before running the test
-suite. Re-running it is safe and preserves config and engagement data.
+That is the whole install. The script fetches the repo from GitHub into
+`~/.local/share/nullbyte-security` (or uses `~/nullbyte-security` if it already
+exists), updates it, then inspects and repairs the installation before running
+the tests. Re-run the same command to update or repair; config and engagement
+data are preserved.
+
+To inspect without changing anything:
 
 ```bash
-./install.sh --check      # inspect only; non-zero if repair is needed
-./install.sh --no-deps    # skip dependency install
-./install.sh --no-test    # skip tests
+curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh | bash -s -- --check
 ```
 
-Config is read at startup; restart `nullbyte` after changing the plugin or config.
+Set `NULLBYTE_SECURITY_HOME=/path` to use a different checkout location. Config
+is read at startup; restart `nullbyte` after changing the plugin or config.
 
 ## Usage
 

@@ -6,7 +6,6 @@
 # never deleted, and existing configuration/engagement data is left alone.
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_DIR="${NULLBYTE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/nullbyte}"
 RUN_DEPS=1
 RUN_TESTS=1
@@ -19,6 +18,7 @@ NEED_MCP_DEPS=0
 usage() {
   cat <<'EOF'
 Usage: ./install.sh [options]
+       curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh | bash
 
 Inspects, installs or repairs the NullByte security layer. Re-running is safe.
 
@@ -49,6 +49,82 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+# ---- locate or bootstrap the checkout -----------------------------------
+REPO_URL="${NULLBYTE_SECURITY_REPO:-https://github.com/Eliahhango/nullbyte-security.git}"
+SCRIPT_PATH="${BASH_SOURCE[0]:-}"
+FROM_CURL=1
+
+if [ -n "$SCRIPT_PATH" ] && [ -f "$SCRIPT_PATH" ]; then
+  SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+  case "$SCRIPT_DIR" in
+    /dev/fd/*|/proc/self/fd/*) ;;
+    *)
+      if [ -f "$SCRIPT_DIR/package.json" ] &&
+         grep -q '"name"[[:space:]]*:[[:space:]]*"nullbyte-security"' "$SCRIPT_DIR/package.json"; then
+        REPO_DIR="$SCRIPT_DIR"
+        FROM_CURL=0
+      fi
+      ;;
+  esac
+fi
+
+if [ "$FROM_CURL" -eq 1 ]; then
+  if [ -n "${NULLBYTE_SECURITY_HOME:-}" ]; then
+    REPO_DIR="$NULLBYTE_SECURITY_HOME"
+  elif [ -d "$HOME/nullbyte-security/.git" ]; then
+    REPO_DIR="$HOME/nullbyte-security"
+  else
+    REPO_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nullbyte-security"
+  fi
+fi
+
+bootstrap_repo() {
+  if ! command -v git >/dev/null 2>&1; then
+    echo "error: git is required for the curl installer" >&2
+    echo "       install git, or clone the repo and run ./install.sh" >&2
+    exit 1
+  fi
+
+  if [ -d "$REPO_DIR/.git" ]; then
+    say "updating existing checkout"
+    note "$REPO_DIR"
+    if ! GIT_TERMINAL_PROMPT=0 git -C "$REPO_DIR" pull --ff-only --quiet; then
+      note "could not fast-forward; continuing with the existing checkout"
+    fi
+    return 0
+  fi
+
+  if [ -e "$REPO_DIR" ] || [ -L "$REPO_DIR" ]; then
+    if [ -d "$REPO_DIR" ] && [ -z "$(ls -A "$REPO_DIR" 2>/dev/null)" ]; then
+      rmdir "$REPO_DIR"
+    else
+      local backup="$REPO_DIR.bak.$(date +%Y%m%d%H%M%S)"
+      note "backing up existing $REPO_DIR → $(basename "$backup")"
+      mv "$REPO_DIR" "$backup"
+    fi
+  fi
+
+  say "cloning NullByte security"
+  note "$REPO_DIR"
+  mkdir -p "$(dirname "$REPO_DIR")"
+  if ! GIT_TERMINAL_PROMPT=0 git clone --depth 1 --quiet "$REPO_URL" "$REPO_DIR"; then
+    echo "error: could not clone $REPO_URL" >&2
+    echo "       check your network, or clone the repo and run ./install.sh" >&2
+    exit 1
+  fi
+}
+
+if [ "$FROM_CURL" -eq 1 ]; then
+  if [ "$CHECK_ONLY" -eq 1 ] && [ ! -d "$REPO_DIR/.git" ]; then
+    echo "error: no existing checkout at $REPO_DIR" >&2
+    echo "       run the installer once without --check first" >&2
+    exit 1
+  fi
+  if [ "$CHECK_ONLY" -eq 0 ]; then
+    bootstrap_repo
+  fi
+fi
 
 say "repo:   $REPO_DIR"
 say "config: $CONFIG_DIR"
