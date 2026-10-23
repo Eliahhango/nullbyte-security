@@ -121,10 +121,18 @@ or `NULLBYTE_NO_PROGRESS=1` / `NULLBYTE_PROGRESS=0` to disable it.
 | `sec_threat_model` | shared per-target threat model with append-only amendments |
 | `sec_retest` | re-run or record a finding's reproduction |
 | `sec_report` | export markdown, JSON, HTML, PDF, SARIF or CSV |
-| `sec_methodology` | search and load shared knowledge fragments |
+| `sec_methodology` | search and load shared knowledge fragments and skill playbooks (CTF, agentic, code review, remediation, CI, appsec) |
 | `sec_audit` | review allow/deny decisions and verify the audit chain |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is.
+
+## `SKILL PACKS`
+
+`sec_methodology` ships six NullByte playbooks on top of the vulnerability
+fragments: `ctf-sprint`, `agentic-assessment`, `secure-code-review`,
+`vulnerability-remediation`, `ci-security-gate` and `application-assessment`.
+Search them with `sec_methodology action=search query=ctf` (or `agentic`,
+`code-review`, `remediation`, `ci`, `appsec`) and load only what the task needs.
 
 ## `SCOPE LOCK`
 

@@ -20,6 +20,7 @@ import { SECURITY_WORKFLOW, SECURITY_REMINDER } from "../security-lib/workflow.t
 import { loadPluginPolicy, loadScope } from "../security-lib/config.ts"
 import { setRuntimeRoot } from "../security-lib/paths.ts"
 import { writeAudit } from "../security-lib/audit.ts"
+import { scrubBrand, scrubBrandDeep } from "../security-lib/brand.ts"
 
 /** Internal agents that never need the security methodology. */
 const INTERNAL_AGENT = /^(title|summary|compaction|generate|task)/i
@@ -77,6 +78,7 @@ export const NullByteSecurity: Plugin = async (input) => {
     "permission.ask": async (permission, output) => {
       if (!auditRoot) return
       const p = permission as Record<string, any>
+      if (typeof p.message === "string") p.message = scrubBrand(p.message)
       writeAudit(auditRoot, {
         sessionID: p.sessionID,
         tool: p.type ?? "permission",
@@ -85,6 +87,13 @@ export const NullByteSecurity: Plugin = async (input) => {
         reason: p.message ?? `permission requested for ${p.pattern ?? "unknown pattern"}`,
         args: typeof p.pattern === "string" ? p.pattern : undefined,
       })
+    },
+
+    // ---- display boundary: never show the runtime brand in the interface ----
+    "tool.execute.after": async (_input, output) => {
+      if (typeof output.title === "string") output.title = scrubBrand(output.title)
+      if (typeof output.output === "string") output.output = scrubBrand(output.output)
+      if (output.metadata) output.metadata = scrubBrandDeep(output.metadata)
     },
 
     // ---- remember which agent a session belongs to ----

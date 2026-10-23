@@ -16,11 +16,13 @@ interfaces preserved, the host CLI touched only where unavoidable.
 | Reporting | closure summary, counterevidence, assumptions, fix effort, evidence states | `report.ts` |
 | Scan authorization | `sec_recon` / `sec_ports` / `sec_scan` authorized by default; allow-list retained for shell, webfetch and retest | `scope.ts`, `tools/shared.ts`, `tools/recon.ts`, `tools/ports.ts`, `tools/scan.ts` |
 | Chat-safe progress | live spinner auto-suppressed in chat/TUI harnesses, terminal remains opt-in | `progress.ts` |
+| Own skill playbooks | CTF, agentic orchestration, secure code review, remediation, CI gate and application assessment | `methodology.ts`, `tools/knowledge.ts` |
+| Output branding | runtime identifiers stay functional; tool titles, output and metadata present as NullByte | `brand.ts`, `plugin/nullbyte-security.ts` |
 | Coverage ledger | surface × risk outcomes, duplicate rejection, revision history, report section, JSON sidecar and SARIF summary | `coverage.ts`, `tools/coverage.ts` |
 | Threat model | shared per-target model, save/amend with append-only amendments, report embedding | `threat-model.ts`, `tools/threat-model.ts` |
 | Agent resilience | transient provider/TLS/socket retry in a fresh child session, shared deadline, configurable attempts | `agents.ts`, `tools/agents.ts` |
 | Reporting | coverage and threat-model sections; `*.coverage.json`; SARIF coverage notification | `report.ts`, `interop.ts` |
-| Tests | 331 → 348 | `__tests__/*` |
+| Tests | 331 → 352 | `__tests__/*` |
 
 ## Strix adoption roadmap
 

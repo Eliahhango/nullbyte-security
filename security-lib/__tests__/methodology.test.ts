@@ -8,7 +8,7 @@
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { FRAGMENTS, MAX_SELECTED_BYTES, MAX_SELECTED_FRAGMENTS, escapeReservedBoundaries, listFragments, loadFragment, renderKnowledge, resolveFragments, searchCatalog, searchFragments } from "../methodology.ts"
+import { FRAGMENTS, MAX_SELECTED_BYTES, MAX_SELECTED_FRAGMENTS, categorySummary, escapeReservedBoundaries, listFragments, loadFragment, renderKnowledge, resolveFragments, searchCatalog, searchFragments } from "../methodology.ts"
 
 test("every fragment is well formed and uniquely identified", () => {
   const ids = new Set<string>()
@@ -79,6 +79,20 @@ test("vulnerability classes are actually covered", () => {
   for (const required of ["xss", "sqli", "ssrf", "idor", "auth-session", "access-control", "path-traversal", "command-injection", "file-upload", "api-testing"]) {
     assert.ok(ids.has(required), `knowledge base is missing the ${required} fragment`)
   }
+})
+
+test("our own playbooks cover CTFs, agents, code review, remediation and CI", () => {
+  const ids = new Set(FRAGMENTS.map((f) => f.id))
+  for (const required of ["ctf-sprint", "agentic-assessment", "secure-code-review", "vulnerability-remediation", "ci-security-gate", "application-assessment"]) {
+    assert.ok(ids.has(required), `knowledge base is missing the ${required} playbook`)
+  }
+  assert.equal(searchFragments("ctf", 3)[0]?.id, "ctf-sprint")
+  assert.equal(searchFragments("agentic", 3)[0]?.id, "agentic-assessment")
+  assert.equal(searchFragments("code review", 3)[0]?.id, "secure-code-review")
+  assert.equal(searchFragments("remediation", 3)[0]?.id, "vulnerability-remediation")
+  assert.equal(searchFragments("ci", 3)[0]?.id, "ci-security-gate")
+  assert.equal(searchFragments("appsec", 3)[0]?.id, "application-assessment")
+  assert.equal(categorySummary().find((c) => c.category === "playbook")?.count, 6)
 })
 
 test("safety guidance is present in the offensive fragments", () => {

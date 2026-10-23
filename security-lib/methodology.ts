@@ -337,6 +337,91 @@ export const FRAGMENTS: Fragment[] = [
       "Report the exact rule you defeated and why it failed, so the fix is obvious: anchor the match, parse the URL, and compare the resolved host.",
     ].join("\n"),
   },
+  {
+    id: "ctf-sprint",
+    title: "CTF sprint: solve the challenge, capture the flag",
+    tags: ["playbook", "ctf", "challenge", "timebox", "web", "pwn", "rev", "crypto", "forensics"],
+    body: [
+      "The deliverable is the flag, not a report. Do not create findings, coverage or a report unless the user asks for a writeup; keep only the evidence needed to reproduce the solve.",
+      "First pass, fast: identify the category, read every provided file, note the flag format, endpoints and constraints, then pick a hypothesis. Timebox each approach so a dead end does not consume the challenge.",
+      "Prefer deterministic local analysis over blind scanning. For a network service, use sec_recon and sec_ports to map it, then interact deliberately; do not spray payloads that could reset the instance.",
+      "Category cues: web — source, routes, authz, upload, SSTI, deserialization; pwn — checksec, crash offset, leak, libc, ROP; rev — strings, symbols, decompiler, key check; crypto — oracle, nonce reuse, weak parameters, known plaintext; forensics — file magic, timeline, stego, memory; misc — encodings, OSINT and scripting.",
+      "Validate the flag against the challenge's exact format or submission endpoint. Never present a guessed or plausible-looking flag as solved. If the flag is accepted, quote it exactly once and stop.",
+      "When stuck, change the abstraction rather than repeating the same probe: reread the prompt, inspect the binary/service from another angle, or hand a self-contained description to a fresh sec_agents child. A second context often beats a stronger payload.",
+      "Keep exploits minimal and reversible. Do not attack the scoring infrastructure, other teams, or anything outside the challenge instance. A solve is the proof; persistence, lateral movement and data destruction are not.",
+      "If a writeup is requested, cover challenge intent, the decisive insight, the exact solve commands or script, the flag, and the dead ends worth recording. Do not pad it with unrelated enumeration.",
+    ].join("\n"),
+  },
+  {
+    id: "agentic-assessment",
+    title: "Agentic assessment: plan, delegate and keep evidence coherent",
+    tags: ["playbook", "agentic", "orchestration", "multi-agent", "planning", "budget", "workflow"],
+    body: [
+      "Write a one-page plan before delegating: assets, attacker-controlled inputs, high-value hypotheses, the test matrix, and explicit stop conditions. Record the shared assumptions in sec_threat_model so every child starts from the same model.",
+      "Use sec_agents for independent workstreams, not for dependent steps. Give each child a self-contained prompt with the target, constraints, expected deliverable, evidence standard and the coverage surface it owns. Never make two children responsible for the same target and risk area.",
+      "Assign by surface or vulnerability class — for example authentication, object authorization, injection, file handling, cloud/egress — and keep report-writing in the parent. Children should return observations and reproducible commands, not competing reports.",
+      "Set a budget before spawning: task count, per-child timeout and retry allowance. Stop a line of work when it stops producing new evidence, when the remaining hypotheses need a capability you do not have, or when the next step would be destructive.",
+      "The parent merges. Re-run every child PoC that will be reported, deduplicate by root cause, reconcile contradictory observations, and record coverage for tested-sound surfaces. A child's summary is a lead, not evidence.",
+      "Keep authority and state in one place: the parent owns sec_finding, sec_coverage, sec_threat_model and sec_report. Children may ask the operator a question when the answer materially changes the work, but must not invent scope or approval.",
+      "Before finishing, state what was tested, what was proven, what was only inferred, what was not reachable, and which tasks hit their budget. Parallel work that was never merged is not coverage.",
+    ].join("\n"),
+  },
+  {
+    id: "secure-code-review",
+    title: "Secure code review: trace data, authorization and trust boundaries",
+    tags: ["playbook", "coding", "code-review", "white-box", "sast", "taint", "authorization", "supply-chain"],
+    body: [
+      "Map before reading line by line: entry points (HTTP routes, CLI, queues, webhooks, parsers), authentication and authorization, data stores, outbound network calls, file access, secrets and trust boundaries.",
+      "Trace attacker-controlled data from source to sink. The sinks that matter are SQL/ORM queries, shell execution, template rendering, deserialization, file paths, URL fetches, HTML output, XML parsers, redirects and upload handling. A sink without a reachable source is a lead, not a finding.",
+      "Review authorization at object and function level: every tenant-scoped query must constrain the tenant from the server-side session, not from a client field. Check mass assignment, token claims trusted over session state, and UI-only checks.",
+      "Use sec_sast for secret and dependency leads, then verify reachability and exploitability yourself. A vulnerable dependency that is never loaded on an attacker-reachable path is not the same finding as one that is.",
+      "Check configuration as code: debug mode, permissive CORS, cookie flags, TLS verification, default credentials, verbose errors, exposed admin routes and unsafe file permissions. Report the concrete setting and its effect.",
+      "Every finding needs file:line, the call path, preconditions, the observed or inferred impact, and confidence. Do not report a pattern match as a vulnerability without a path an attacker can actually take.",
+      "When fixing, patch the shared control point rather than the demonstrated payload, add a regression test at the layer that failed, and preserve the project's existing framework patterns. Re-run the original proof and the test suite.",
+    ].join("\n"),
+  },
+  {
+    id: "vulnerability-remediation",
+    title: "Remediate findings: root cause, regression test, re-verify",
+    tags: ["playbook", "coding", "remediation", "fix", "patch", "verification", "testing"],
+    body: [
+      "Reproduce the finding first with the original request, command or test. If it no longer reproduces, re-triage instead of editing code to match a stale report.",
+      "Fix the root cause at the shared control point, not the one route or payload: parameterize every query, enforce object authorization centrally, use context-aware output encoding, allow-list outbound destinations, and avoid native deserialization of untrusted data.",
+      "Prefer the framework's built-in defense over ad-hoc filtering. Keep the diff minimal, follow the repository's patterns, and avoid security theater that blocks one payload while leaving the sink reachable.",
+      "Add a regression test that fails before the fix and passes after it. Test the authorization boundary and the malformed input path, not just the happy path. If a test is impossible, state why and give a manual verification command.",
+      "Secrets require rotation as well as removal from source and history. A deleted key that was committed is still compromised; say so plainly and do not reproduce the secret in the report.",
+      "Re-run the original PoC and the project's test suite. Update sec_finding only from observed evidence, record a sec_retest when the behaviour is re-checked, and leave coverage honest if part of the surface remains untested.",
+      "Report per finding: severity, root cause, files changed, before/after behaviour, verification result, residual risk and any deployment or migration requirement.",
+    ].join("\n"),
+  },
+  {
+    id: "ci-security-gate",
+    title: "CI security gate: diff-scoped checks that block real risk",
+    tags: ["playbook", "ci", "devsecops", "pipeline", "sarif", "sast", "dependency", "secret-scanning"],
+    body: [
+      "Gate the changed code, not the whole repository. Resolve the pull request's actual base branch explicitly and fail the job when the base cannot be resolved; silently falling back to HEAD~1 or a guessed branch can turn a multi-commit change into a clean-looking scan.",
+      "Run cheap deterministic checks first: secret scanning, dependency audit, language/framework SAST on the diff, and the project's own tests. Use sec_sast for local secret and dependency leads and keep raw output as the artifact.",
+      "Escalate from static review to live testing only against a configured staging target. A CI job must never point sec_recon, sec_ports or sec_scan at production without an explicit operator decision.",
+      "Fail only on validated or high-confidence issues at the chosen severity threshold. Keep lower-severity observations and hardening notes in the report so a passing job is not mistaken for a clean codebase.",
+      "Emit SARIF for code scanning and keep file/line locations stable. Deduplicate by root cause so a shared helper does not produce one alert per call site.",
+      "Guard against fail-open: a truncated scan, missing tool, unresolved base or exhausted budget is a failed gate, not a pass. Check the scanner's completion status and coverage before trusting an empty result.",
+      "Pin tool versions, use least-privilege tokens, cache dependencies, and never print secrets. A security gate that leaks credentials in its logs has made the problem worse.",
+    ].join("\n"),
+  },
+  {
+    id: "application-assessment",
+    title: "Application assessment: choose the right test per asset",
+    tags: ["playbook", "appsec", "assessment", "web", "api", "owasp", "coverage", "threat-model"],
+    body: [
+      "Inventory before testing: source repositories, staging and production environments, APIs, authentication flows, tenants, constraints and the assets the operator actually owns. If production is off limits, say so before any active test.",
+      "Pick the cheapest test that can prove the hypothesis. Source review maps authorization and data flow; a live test proves exploitability; combining them is strongest. Do not run a deep live scan when a code path already answers the question.",
+      "Build a surface matrix: web — authentication, session, object authorization, injection, SSRF, file handling, business logic; API — BOLA, mass assignment, function-level authorization, GraphQL, rate limits; code — taint, authorization, secrets, dependencies; configuration — TLS, headers, CORS, cookies, defaults.",
+      "For authorization, use two accounts at different privilege levels. Without a second principal, cross-tenant and IDOR claims are structurally incomplete. For injection and SSRF, prove the effect with the smallest observable payload.",
+      "Map coverage to OWASP Top 10 / API Top 10 categories, but report only what was proven. Tested-sound surfaces go in sec_coverage; untestable areas such as internal logging and alerting are stated as limitations, not passed.",
+      "Consolidate by root cause and proven impact, not scanner severity. Deduplicate across source and live runs, reconcile contradictions, and keep the threat model current as the assessment teaches you more.",
+      "Stop at a defensible proof. Do not escalate to persistence, lateral movement or data exfiltration to make a finding look stronger. Finish with a report that separates observed, inferred and unverified results.",
+    ].join("\n"),
+  },
 ]
 
 /**
@@ -348,6 +433,7 @@ export type FragmentCategory =
   | "vulnerability"
   | "technology"
   | "analysis"
+  | "playbook"
 
 const CATEGORY_BY_ID: Record<string, FragmentCategory> = {
   "scope-and-authorization": "process",
@@ -375,6 +461,12 @@ const CATEGORY_BY_ID: Record<string, FragmentCategory> = {
   ssti: "vulnerability",
   "open-redirect": "vulnerability",
   "exploit-discipline": "analysis",
+  "ctf-sprint": "playbook",
+  "agentic-assessment": "playbook",
+  "secure-code-review": "playbook",
+  "vulnerability-remediation": "playbook",
+  "ci-security-gate": "playbook",
+  "application-assessment": "playbook",
 }
 
 export function categoryOf(id: string): FragmentCategory {
@@ -416,6 +508,23 @@ const ALIASES: Record<string, string[]> = {
   hardening: ["recon-web"],
   misconfiguration: ["recon-web", "access-control"],
   "default-credentials": ["auth-session"],
+  ctf: ["ctf-sprint", "challenge"],
+  "capture-the-flag": ["ctf-sprint"],
+  agentic: ["agentic-assessment", "orchestration"],
+  orchestration: ["agentic-assessment", "multi-agent"],
+  "multi-agent": ["agentic-assessment"],
+  "code-review": ["secure-code-review", "white-box"],
+  "secure-coding": ["secure-code-review"],
+  "source-review": ["secure-code-review"],
+  remediation: ["vulnerability-remediation", "fix"],
+  fix: ["vulnerability-remediation", "remediation"],
+  patch: ["vulnerability-remediation"],
+  ci: ["ci-security-gate", "pipeline"],
+  pipeline: ["ci-security-gate", "devsecops"],
+  devsecops: ["ci-security-gate"],
+  appsec: ["application-assessment"],
+  "application-security": ["application-assessment"],
+  assessment: ["application-assessment"],
 }
 
 /**

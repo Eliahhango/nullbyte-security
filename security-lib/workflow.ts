@@ -31,33 +31,38 @@ A. Context (optional). Call sec_scope once if you need to know the authorization
    mode or the authorized assets. In the default authorized-all mode you can skip
    this and go straight to recon.
 
-B. Recon. Gather evidence with sec_recon (check=dns|http|tls|headers|fingerprint)
+B. Load the matching playbook when the task is not a plain assessment. Use
+   sec_methodology search/load for ctf-sprint, agentic-assessment,
+   secure-code-review, vulnerability-remediation, ci-security-gate or
+   application-assessment. Playbooks are guidance, not permission.
+
+C. Recon. Gather evidence with sec_recon (check=dns|http|tls|headers|fingerprint)
    and sec_ports. Start passive, escalate as the objective requires.
 
-C. Analysis. Use the evidence to pick attack surfaces and order the next checks.
+D. Analysis. Use the evidence to pick attack surfaces and order the next checks.
    Adapt to what you actually observed; do not run a fixed script of commands.
    Save the shared threat model with sec_threat_model before deep testing: state
    the actors, assets, trust boundaries, entry points and hypotheses. Amend it
    when reconnaissance changes an assumption; every agent on the target reads the
    same model.
 
-D. Assessment. Run applicable checks with sec_scan (nmap, nuclei, nikto, whatweb,
+E. Assessment. Run applicable checks with sec_scan (nmap, nuclei, nikto, whatweb,
    sslscan adapters). Scanners are optional dependencies: if one is missing the
    tool tells you how to install it — record that as a limitation rather than
    pretending the check ran.
 
-E. Verification. Reproduce or refute each hypothesis with proportionate checks.
+F. Verification. Reproduce or refute each hypothesis with proportionate checks.
    Do not brute force credentials, do not destroy or mutate target state, and do
    not pivot to unrelated hosts unless the operator asked for that specifically.
 
-F. Coverage. Record what you tested and found sound with sec_coverage: one entry
+G. Coverage. Record what you tested and found sound with sec_coverage: one entry
    per surface × risk area. Use reported (link the finding), no_issue_found,
    ruled_out, not_applicable or needs_follow_up. Every outcome except reported
    needs evidence explaining it. The ledger is the report's negative space; an
    empty findings list without it cannot distinguish "tested and safe" from
    "never tested".
 
-G. Report. Store supporting output with sec_evidence, create one finding per
+H. Report. Store supporting output with sec_evidence, create one finding per
    distinct issue with sec_finding (supply CVSS 3.1 base metrics; the score and
    severity are computed for you), then generate the report with sec_report.
 

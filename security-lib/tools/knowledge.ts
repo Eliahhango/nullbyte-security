@@ -10,6 +10,7 @@
 
 import { tool } from "@opencode-ai/plugin"
 import {
+  FRAGMENTS,
   MAX_SELECTED_FRAGMENTS,
   categorySummary,
   listFragments,
@@ -22,16 +23,19 @@ import type { ToolCtxLike } from "./shared.ts"
 
 export const secMethodology = tool({
   description:
-    "Shared pentest methodology — the agent-agnostic knowledge base, 23 fragments across process, vulnerability and " +
-    "analysis categories. action=search returns matching fragments as metadata (id, category, title, description) without " +
+    `Shared methodology and skill packs — ${FRAGMENTS.length} fragments across process, vulnerability, analysis and ` +
+    "playbook categories. action=search returns matching fragments as metadata (id, category, title, description) without " +
     "loading content; call it with no query to get category counts. action=load returns the full content of up to " +
     `${MAX_SELECTED_FRAGMENTS} fragments by id (bare like 'xss', category-qualified like 'vulnerability/xss', or a partial id). ` +
     "action=list shows every id. Vulnerability fragments ship with precision requirements that override the fragment text, " +
     "so load them before testing a class rather than improvising payloads.",
   args: {
     action: tool.schema.enum(["search", "load", "list"]).describe("operation"),
-    query: tool.schema.string().optional().describe("search terms, e.g. xss, sqli, ssrf, idor, rce, lfi, jwt, recon (action=search)"),
-    category: tool.schema.enum(["process", "vulnerability", "analysis"]).optional().describe("restrict search to a category (action=search)"),
+    query: tool.schema
+      .string()
+      .optional()
+      .describe("search terms, e.g. xss, sqli, ssrf, ctf, agentic, code-review, remediation, ci, recon (action=search)"),
+    category: tool.schema.enum(["process", "vulnerability", "analysis", "playbook"]).optional().describe("restrict search to a category (action=search)"),
     limit: tool.schema.number().optional().describe("max results for action=search (default 8)"),
     id: tool.schema.string().optional().describe("single fragment id (action=load)"),
     ids: tool.schema.array(tool.schema.string()).optional().describe("fragment ids to load together (action=load)"),
