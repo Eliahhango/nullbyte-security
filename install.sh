@@ -35,13 +35,18 @@ note() { printf '  %s\n' "$*"; }
 ok() { printf '  ok   %s\n' "$*"; }
 fixed() { printf '  fix  %s\n' "$*"; FIXED=$((FIXED + 1)); }
 issue() { printf '  warn %s\n' "$*" >&2; ISSUES=$((ISSUES + 1)); }
+drain_stdin() {
+  if [ -z "${BASH_SOURCE[0]:-}" ]; then
+    cat >/dev/null 2>&1 || true
+  fi
+}
 
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1; RUN_DEPS=0; RUN_TESTS=0 ;;
     --no-deps) RUN_DEPS=0 ;;
     --no-test|--skip-tests) RUN_TESTS=0 ;;
-    -h|--help) usage; exit 0 ;;
+    -h|--help) usage; drain_stdin; exit 0 ;;
     *)
       echo "error: unknown option: $arg" >&2
       usage >&2
@@ -274,10 +279,12 @@ else
 fi
 
 if [ "$CHECK_ONLY" -eq 1 ]; then
+  drain_stdin
   if [ "$ISSUES" -eq 0 ]; then
+    echo "check passed: installation healthy"
     exit 0
   fi
-  echo "check failed: run ./install.sh to repair the issues above" >&2
+  echo "check failed: run the installer without --check to repair the issues above" >&2
   exit 1
 fi
 
