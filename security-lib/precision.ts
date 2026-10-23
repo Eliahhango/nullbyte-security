@@ -20,6 +20,8 @@
  *    it could not disprove. `open_proof_gap` is the honest third state.
  */
 
+import type { PrecisionAttachment } from "./types.ts"
+
 export type ClosureState = "confirmed" | "ruled_out" | "open_proof_gap"
 
 export const CLOSURE_STATES: readonly ClosureState[] = ["confirmed", "ruled_out", "open_proof_gap"]
@@ -79,6 +81,14 @@ export const PRECISION_NOTES: Record<string, PrecisionNote> = {
     instructions:
       "Missing OAuth state alone does not establish login CSRF: transaction-bound PKCE or an OIDC nonce can supply equivalent protection, so verify binding to the initiating client and user-agent session, including cross-session callback and PKCE downgrade. Public-client refresh tokens must be sender-constrained OR rotated; absence of rotation alone is not a finding when sender constraint prevents replay. For password policy, missing composition rules or history are not vulnerabilities under NIST SP 800-63B-4, which prohibits mandatory composition and periodic resets absent compromise evidence: assess against the target's stated baseline and require length, breach screening and online-guessing resistance instead.",
   },
+  "access-control": {
+    instructions:
+      "A kubelet 401 or 403 is not proof of anonymous access or an authorization bypass: the endpoint may simply require a client certificate or token. Verify the exact path and method, whether authentication is genuinely skipped rather than rejected, and whether the unauthenticated response exposes workload data or exec. A default-deny response is counterevidence, not a finding.",
+  },
+  "recon-web": {
+    instructions:
+      "A Django SECRET_KEY in a debug page, settings dump or repository is a disclosure of signing material, not automatically an authentication bypass. Verify it is the deployed key and that it signs a reachable session, token or signed URL; a placeholder, a non-deployed settings module, or an unusable key is lower severity. Report the disclosure and rotate it, but do not claim session forgery without demonstrating a forged artifact the application accepts.",
+  },
   "file-upload": {
     instructions:
       "Response headers alone are not an executable upload. Require evidence that the stored object reaches an active renderer and produces script execution, content-type confusion with concrete impact, or another cross-user effect. A safely rendered image response is counterevidence even when attachment and nosniff headers are absent.",
@@ -119,6 +129,88 @@ export function getPrecisionNote(id: string): PrecisionNote | undefined {
 
 export function listPrecisionNoteIds(): string[] {
   return Object.keys(PRECISION_NOTES)
+}
+
+/** The fields that can carry a false-positive shape. */
+export interface PrecisionSubject {
+  title?: string
+  description?: string
+  impact?: string
+  evidence?: string
+  reproduction?: string
+  demonstrated_by?: string
+  counterevidence?: string
+  cwe?: string
+}
+
+interface PrecisionTrigger {
+  class_id: string
+  /** the phrase that demonstrates the shape, for the attachment record */
+  trigger: string
+  match: (text: string) => boolean
+}
+
+const PRECISION_TRIGGERS: readonly PrecisionTrigger[] = [
+  {
+    class_id: "insecure-deserialization",
+    trigger: "PHP Phar metadata",
+    match: (t) => /\bphar:\/\/|\bphar\b/i.test(t),
+  },
+  {
+    class_id: "auth-session",
+    trigger: "OAuth/OIDC flow",
+    match: (t) => /\b(?:oauth|oidc|openid|pkce)\b/i.test(t),
+  },
+  {
+    class_id: "auth-session",
+    trigger: "OAuth state parameter",
+    match: (t) => /\bstate\b[^\n]{0,100}\b(?:callback|redirect|parameter|param|token)\b/i.test(t),
+  },
+  {
+    class_id: "access-control",
+    trigger: "kubelet endpoint",
+    match: (t) => /\bkubelet\b/i.test(t),
+  },
+  {
+    class_id: "recon-web",
+    trigger: "Django SECRET_KEY",
+    match: (t) => /\bdjango\b/i.test(t) && /\bsecret[_-]?key\b/i.test(t),
+  },
+  {
+    class_id: "sqli",
+    trigger: "NoSQL JavaScript setting",
+    match: (t) => /security\.javascriptEnabled|javascriptEnabled/i.test(t),
+  },
+]
+
+/**
+ * Attach every class-specific false-positive note whose shape appears in the
+ * finding text. Deterministic and local: no model call, no caller opt-out.
+ */
+export function precisionAttachmentsFor(subject: PrecisionSubject): PrecisionAttachment[] {
+  const text = [
+    subject.title,
+    subject.description,
+    subject.impact,
+    subject.evidence,
+    subject.reproduction,
+    subject.demonstrated_by,
+    subject.counterevidence,
+    subject.cwe,
+  ]
+    .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+    .join("\n")
+
+  const seen = new Set<string>()
+  const out: PrecisionAttachment[] = []
+  for (const trigger of PRECISION_TRIGGERS) {
+    if (seen.has(trigger.class_id) || !trigger.match(text)) continue
+    const note = getPrecisionNote(trigger.class_id)
+    if (!note) continue
+    seen.add(trigger.class_id)
+    out.push({ class_id: trigger.class_id, trigger: trigger.trigger, note: note.instructions })
+  }
+  return out
 }
 
 /**

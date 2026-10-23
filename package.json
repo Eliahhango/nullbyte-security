@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "test": "node --experimental-strip-types --test security-lib/__tests__/*.test.ts",
+    "test:install": "node --experimental-strip-types tools/install-smoke.ts",
     "lab": "node tools/lab/vulnerable-server.mjs"
   },
   "devDependencies": {

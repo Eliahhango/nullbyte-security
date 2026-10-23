@@ -18,13 +18,14 @@ import {
   searchCatalog,
 } from "../methodology.ts"
 import { readAudit, verifyAudit } from "../audit.ts"
+import { readAllFindings } from "../findings.ts"
 import { loadScope } from "../config.ts"
 import type { ToolCtxLike } from "./shared.ts"
 
 export const secMethodology = tool({
   description:
-    `Shared methodology and skill packs — ${FRAGMENTS.length} fragments across process, vulnerability, analysis and ` +
-    "playbook categories. action=search returns matching fragments as metadata (id, category, title, description) without " +
+    `Shared methodology and skill packs — ${FRAGMENTS.length} fragments across process, vulnerability, analysis, ` +
+    "playbook and coding categories. action=search returns matching fragments as metadata (id, category, title, description) without " +
     "loading content; call it with no query to get category counts. action=load returns the full content of up to " +
     `${MAX_SELECTED_FRAGMENTS} fragments by id (bare like 'xss', category-qualified like 'vulnerability/xss', or a partial id). ` +
     "action=list shows every id. Vulnerability fragments ship with precision requirements that override the fragment text, " +
@@ -34,8 +35,11 @@ export const secMethodology = tool({
     query: tool.schema
       .string()
       .optional()
-      .describe("search terms, e.g. xss, sqli, ssrf, ctf, agentic, code-review, remediation, ci, recon (action=search)"),
-    category: tool.schema.enum(["process", "vulnerability", "analysis", "playbook"]).optional().describe("restrict search to a category (action=search)"),
+      .describe("search terms, e.g. xss, sqli, ssrf, ctf, agentic, debugging, test-strategy, refactoring, feature-delivery (action=search)"),
+    category: tool.schema
+      .enum(["process", "vulnerability", "analysis", "playbook", "coding"])
+      .optional()
+      .describe("restrict search to a category (action=search)"),
     limit: tool.schema.number().optional().describe("max results for action=search (default 8)"),
     id: tool.schema.string().optional().describe("single fragment id (action=load)"),
     ids: tool.schema.array(tool.schema.string()).optional().describe("fragment ids to load together (action=load)"),
@@ -90,15 +94,52 @@ export const secAudit = tool({
     "Review the audit trail of security tool decisions for this engagement: which targets were authorized or refused, which " +
     "operations required approval, and when. Use it to verify that nothing ran outside scope, and to quote the decision " +
     "history in the report's limitations. action=verify recomputes the trail's hash chain to prove the record has not been " +
-    "edited, reordered or trimmed; run it before quoting the trail as evidence, and when a report's coverage is disputed.",
+    "edited, reordered or trimmed; run it before quoting the trail as evidence, and when a report's coverage is disputed. " +
+    "action=reconcile cross-checks the finding store against creation allow records and reports findings that were written " +
+    "without passing through the audited tool layer.",
   args: {
-    action: tool.schema.enum(["list", "verify"]).optional().describe("operation (default list)"),
+    action: tool.schema.enum(["list", "verify", "reconcile"]).optional().describe("operation (default list)"),
     limit: tool.schema.number().optional().describe("how many recent records to return (default 50)"),
     decisions: tool.schema.enum(["all", "deny", "ask"]).optional().describe("filter to refusals or approval requests"),
   },
   async execute(args, ctx: any) {
     const c = ctx as ToolCtxLike
     const root = loadScope(c.worktree).paths.root
+
+    if (args.action === "reconcile") {
+      const findings = readAllFindings(root)
+      if (!findings.length) return "no findings recorded, so there is nothing to reconcile"
+      const records = readAudit(root, 0)
+      const created = new Set(
+        records
+          .filter((r) => r.tool === "sec_finding" && r.decision === "allow" && r.code === "finding.create" && r.args)
+          .map((r) => r.args!),
+      )
+      const unrecorded = findings.filter((f) => !created.has(f.id))
+      const chain = verifyAudit(root)
+      const lines: string[] = []
+      if (!chain.ok) {
+        lines.push(
+          `WARNING: the audit chain is broken (${chain.problems.length} problem(s)). A missing creation record cannot be ` +
+            `distinguished from a damaged trail until it is repaired.`,
+          "",
+        )
+      }
+      if (!unrecorded.length) {
+        lines.push(`${findings.length} finding(s) checked: every one has a matching creation allow record.`)
+      } else {
+        lines.push(
+          `${unrecorded.length}/${findings.length} finding(s) have no creation allow record:`,
+          ...unrecorded.map(
+            (f) => `  ${f.id} [${f.severity}/${f.closure}] ${f.title} — session ${f.sessionID}, created ${f.created_at}`,
+          ),
+          "",
+          "A finding can be written directly to the store, so a missing record is a signal to investigate, not proof of tampering. " +
+            "Findings created before creation auditing was added will also appear here.",
+        )
+      }
+      return lines.join("\n")
+    }
 
     if (args.action === "verify") {
       const v = verifyAudit(root)

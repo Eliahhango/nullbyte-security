@@ -197,7 +197,8 @@ test("capture-time redaction is irreversible from the report", () => {
 
 /* ------------------------------------------------------------ file mode --- */
 
-test("every emitted artifact is owner-only, including the PDF", async () => {
+test("every emitted artifact is owner-only, including the PDF", async (t) => {
+  if (process.platform === "win32") return t.skip("Windows does not enforce POSIX mode bits")
   const { findPdfConverter } = await import("../pdf.ts")
   const dir = tmp()
   const res = writeReport(dir, input({ evidence: [artifact()], evidenceContent: { "E-deadbeef": LEAK }, unredacted: true }), {

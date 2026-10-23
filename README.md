@@ -68,9 +68,19 @@ curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh |
 ```
 
 One command. The installer clones or updates the repo in
-`~/.local/share/nullbyte-security` (or reuses `~/nullbyte-security`), repairs
-missing files and links, installs dependencies and runs the tests. Re-run the
-same command to update or repair.
+`~/.local/share/nullbyte-security` (or reuses `~/nullbyte-security`), installs
+dependencies, runs a deterministic install smoke test, and only then repairs the
+live links. A failed validation leaves an existing installation untouched.
+Re-run the same command to update or repair.
+
+The full suite is opt-in because it exercises optional PDF converters, local
+sockets and POSIX permissions that vary by device:
+
+```bash
+curl -fsSL https://github.com/Eliahhango/nullbyte-security/raw/main/install.sh | bash -s -- --full-test
+```
+
+Use `--no-test` only when you deliberately want to skip validation.
 
 Inspect without touching anything:
 
@@ -121,18 +131,25 @@ or `NULLBYTE_NO_PROGRESS=1` / `NULLBYTE_PROGRESS=0` to disable it.
 | `sec_threat_model` | shared per-target threat model with append-only amendments |
 | `sec_retest` | re-run or record a finding's reproduction |
 | `sec_report` | export markdown, JSON, HTML, PDF, SARIF or CSV |
-| `sec_methodology` | search and load shared knowledge fragments and skill playbooks (CTF, agentic, code review, remediation, CI, appsec) |
+| `sec_methodology` | search and load shared knowledge fragments, coding skills and security playbooks |
 | `sec_audit` | review allow/deny decisions and verify the audit chain |
 
 `bash`, `read`, `write`, `edit`, `webfetch` and `todowrite` are reused as-is.
 
 ## `SKILL PACKS`
 
-`sec_methodology` ships six NullByte playbooks on top of the vulnerability
-fragments: `ctf-sprint`, `agentic-assessment`, `secure-code-review`,
-`vulnerability-remediation`, `ci-security-gate` and `application-assessment`.
-Search them with `sec_methodology action=search query=ctf` (or `agentic`,
-`code-review`, `remediation`, `ci`, `appsec`) and load only what the task needs.
+`sec_methodology` ships six NullByte security playbooks — `ctf-sprint`,
+`agentic-assessment`, `secure-code-review`, `vulnerability-remediation`,
+`ci-security-gate`, `application-assessment` — plus eight original coding
+skills: `feature-delivery`, `debugging`, `test-strategy`, `refactoring`,
+`performance`, `dependency-upgrade`, `code-review`, `api-contract`.
+Search them with `sec_methodology action=search query=debugging` and load only
+what the task needs.
+
+The coding skills are also exported as standalone `skills/<id>/SKILL.md`
+packages for hosts that discover skills on disk. `security-lib/coding-skills.ts`
+is the source of truth; regenerate with
+`node --experimental-strip-types tools/export-skills.ts`.
 
 ## `SCOPE LOCK`
 

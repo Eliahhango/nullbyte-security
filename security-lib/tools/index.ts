@@ -4,9 +4,9 @@
 
 import { createSecAgents } from "./agents.ts"
 import { secScope } from "./scope.ts"
-import { secRecon } from "./recon.ts"
-import { secPorts } from "./ports.ts"
-import { secScan } from "./scan.ts"
+import { secRecon, SEC_RECON_MINIMUM_INTENSITY } from "./recon.ts"
+import { secPorts, SEC_PORTS_MINIMUM_INTENSITY } from "./ports.ts"
+import { secScan, SEC_SCAN_MINIMUM_INTENSITY } from "./scan.ts"
 import { secSast } from "./sast.ts"
 import { secEvidence } from "./evidence.ts"
 import { secFinding } from "./findings.ts"
@@ -16,6 +16,7 @@ import { secCoverage } from "./coverage.ts"
 import { secThreatModel } from "./threat-model.ts"
 import { secMethodology, secAudit } from "./knowledge.ts"
 import type { AgentClient } from "../agents.ts"
+import type { Intensity } from "../types.ts"
 
 export const SECURITY_TOOL_IDS = [
   "sec_scope",
@@ -35,6 +36,16 @@ export const SECURITY_TOOL_IDS = [
 ] as const
 
 export type SecurityToolId = (typeof SECURITY_TOOL_IDS)[number]
+
+/**
+ * Declared intensity floors for tools that reach the network. Kept here next to
+ * the registry so a test can compare every entry instead of trusting a comment.
+ */
+export const NETWORK_INTENSITY_FLOORS = {
+  sec_recon: SEC_RECON_MINIMUM_INTENSITY,
+  sec_ports: SEC_PORTS_MINIMUM_INTENSITY,
+  sec_scan: SEC_SCAN_MINIMUM_INTENSITY,
+} as const satisfies Partial<Record<SecurityToolId, Intensity>>
 
 export interface BuildSecurityToolsOptions {
   client?: AgentClient

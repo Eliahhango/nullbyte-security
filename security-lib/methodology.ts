@@ -4,6 +4,7 @@
  * on demand instead of every agent embedding its own pentest instructions.
  */
 
+import { CODING_SKILLS } from "./coding-skills.ts"
 import { getPrecisionNote } from "./precision.ts"
 
 export interface Fragment {
@@ -422,6 +423,7 @@ export const FRAGMENTS: Fragment[] = [
       "Stop at a defensible proof. Do not escalate to persistence, lateral movement or data exfiltration to make a finding look stronger. Finish with a report that separates observed, inferred and unverified results.",
     ].join("\n"),
   },
+  ...CODING_SKILLS,
 ]
 
 /**
@@ -434,6 +436,7 @@ export type FragmentCategory =
   | "technology"
   | "analysis"
   | "playbook"
+  | "coding"
 
 const CATEGORY_BY_ID: Record<string, FragmentCategory> = {
   "scope-and-authorization": "process",
@@ -467,6 +470,14 @@ const CATEGORY_BY_ID: Record<string, FragmentCategory> = {
   "vulnerability-remediation": "playbook",
   "ci-security-gate": "playbook",
   "application-assessment": "playbook",
+  "feature-delivery": "coding",
+  debugging: "coding",
+  "test-strategy": "coding",
+  refactoring: "coding",
+  performance: "coding",
+  "dependency-upgrade": "coding",
+  "code-review": "coding",
+  "api-contract": "coding",
 }
 
 export function categoryOf(id: string): FragmentCategory {
@@ -525,6 +536,22 @@ const ALIASES: Record<string, string[]> = {
   appsec: ["application-assessment"],
   "application-security": ["application-assessment"],
   assessment: ["application-assessment"],
+  feature: ["feature-delivery", "implementation"],
+  implementation: ["feature-delivery"],
+  debug: ["debugging", "bug", "root-cause"],
+  bug: ["debugging", "regression"],
+  "root-cause": ["debugging", "reproduction"],
+  testing: ["test-strategy", "tdd"],
+  tdd: ["test-strategy", "regression"],
+  refactor: ["refactoring", "legacy"],
+  legacy: ["refactoring", "characterization"],
+  perf: ["performance", "profiling"],
+  profiling: ["performance", "benchmark"],
+  dependency: ["dependency-upgrade", "lockfile"],
+  upgrade: ["dependency-upgrade", "breaking-changes"],
+  review: ["code-review", "diff"],
+  "api-design": ["api-contract", "versioning"],
+  contract: ["api-contract", "compatibility"],
 }
 
 /**

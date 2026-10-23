@@ -4,13 +4,13 @@
 
 import test from "node:test"
 import assert from "node:assert/strict"
-import { existsSync, mkdtempSync, readFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { calculateCvss31, getCvss31Severity, validateCvssBreakdown } from "../cvss31.ts"
 import { createFinding, getFinding, listFindings, severitySummary, updateFinding, readAllFindings } from "../findings.ts"
-import { listEvidence, readEvidence, saveEvidence } from "../evidence.ts"
-import { renderJson, renderMarkdown, writeReport } from "../report.ts"
+import { evidenceStoreStats, listEvidence, readEvidence, saveEvidence, MAX_EVIDENCE_ARTIFACTS, MAX_EVIDENCE_STORE_BYTES } from "../evidence.ts"
+import { renderJson, renderMarkdown, reportWarnings, writeReport } from "../report.ts"
 import type { CvssBreakdown, FindingInput } from "../types.ts"
 
 const root = () => mkdtempSync(join(tmpdir(), "nb-find-"))
@@ -236,6 +236,62 @@ test("status cannot be set directly, and a stale revision is refused", () => {
   assert.match(stale.problems.join(" "), /conflict/)
 })
 
+test("a finding stores and reports its class-specific precision checks", () => {
+  const dir = root()
+  const r = createFinding(
+    dir,
+    "s1",
+    finding({
+      title: "PHP phar:// metadata deserialization in the avatar importer",
+      description: "The importer accepts a phar:// path and accesses its metadata.",
+      evidence: "POST /avatar with phar://upload.phar returned the serialized metadata.",
+    }),
+  )
+  assert.equal(r.finding?.precision_notes?.[0].class_id, "insecure-deserialization")
+  const md = renderMarkdown({
+    engagement: "unit",
+    scopeSummary: "authorized_all",
+    sessionID: "s1",
+    findings: readAllFindings(dir),
+    evidence: [],
+  })
+  assert.match(md, /Precision checks/)
+  assert.match(md, /Phar metadata/)
+})
+
+test("report preflight warns when a high or critical finding is still unproven", () => {
+  const dir = root()
+  createFinding(dir, "s1", finding({ cvss_breakdown: NETWORK_RCE }))
+  const input = {
+    engagement: "unit",
+    scopeSummary: "authorized_all",
+    sessionID: "s1",
+    findings: readAllFindings(dir),
+    evidence: [],
+  }
+  const warnings = reportWarnings(input.findings)
+  assert.equal(warnings.length, 1)
+  assert.equal(warnings[0]!.severity, "critical")
+  assert.match(warnings[0]!.message, /open_proof_gap/)
+  const res = writeReport(dir, input, { name: "warn", formats: ["md"] })
+  assert.equal(res.warnings.length, 1)
+
+  createFinding(
+    dir,
+    "s1",
+    finding({
+      title: "Server-side template injection in the invoice template",
+      description: "The invoice name field is rendered through the template engine without sandboxing.",
+      endpoint: "/invoice",
+      cvss_breakdown: NETWORK_RCE,
+      closure: "confirmed",
+      demonstrated_by: "the response evaluated a template expression, returning the arithmetic result",
+      reproduction: "POST /invoice name={{7*7}} returned 49 in the rendered document",
+    }),
+  )
+  assert.equal(reportWarnings(readAllFindings(dir)).length, 1, "a proven finding must not warn")
+})
+
 test("evidence references are verified: absent refs are flagged, unreadable ones are not", () => {
   const dir = root()
   const r = createFinding(
@@ -302,6 +358,52 @@ test("evidence is stored redacted with a hash and read back by id when redaction
 
 test("empty evidence is refused", () => {
   assert.ok(saveEvidence(root(), { sessionID: "s", source: "x", label: "l", content: "   " }).problems.length > 0)
+})
+
+test("evidence capture is refused at the artifact cap, without writing a file", () => {
+  const dir = root()
+  const evidenceDir = join(dir, "evidence")
+  mkdirSync(evidenceDir, { recursive: true })
+  const records = Array.from({ length: MAX_EVIDENCE_ARTIFACTS }, (_, i) => ({
+    id: `E-${String(i).padStart(8, "0")}`,
+    sha256: "0".repeat(64),
+    sessionID: "s",
+    source: "test",
+    label: `artifact ${i}`,
+    created_at: new Date(0).toISOString(),
+    bytes: 1,
+    redacted: false,
+    file: `E-${String(i).padStart(8, "0")}.txt`,
+  }))
+  writeFileSync(join(evidenceDir, "index.json"), JSON.stringify(records))
+
+  const res = saveEvidence(dir, { sessionID: "s", source: "test", label: "new", content: "new artifact" })
+  assert.equal(res.record, undefined)
+  assert.match(res.problems.join(" "), /evidence store is full/)
+  assert.equal(evidenceStoreStats(dir).full, true)
+  assert.equal(readdirSync(evidenceDir).filter((f) => f.endsWith(".txt")).length, 0)
+})
+
+test("evidence capture is refused when the store byte bound would be exceeded", () => {
+  const dir = root()
+  const evidenceDir = join(dir, "evidence")
+  mkdirSync(evidenceDir, { recursive: true })
+  const records = [{
+    id: "E-00000001",
+    sha256: "0".repeat(64),
+    sessionID: "s",
+    source: "test",
+    label: "large artifact",
+    created_at: new Date(0).toISOString(),
+    bytes: MAX_EVIDENCE_STORE_BYTES,
+    redacted: false,
+    file: "E-00000001.txt",
+  }]
+  writeFileSync(join(evidenceDir, "index.json"), JSON.stringify(records))
+
+  const res = saveEvidence(dir, { sessionID: "s", source: "test", label: "new", content: "new artifact" })
+  assert.equal(res.record, undefined)
+  assert.match(res.problems.join(" "), /would exceed/)
 })
 
 /* --------------------------------------------------------------- report --- */

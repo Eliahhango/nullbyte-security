@@ -176,6 +176,20 @@ export interface EvidenceRefCheck {
 }
 
 /**
+ * A class-specific false-positive rule attached to a finding at write time.
+ *
+ * These are derived, never caller-supplied: a finding that mentions a known
+ * over-claiming shape carries the corresponding correction into the report so
+ * the reviewer sees the caveat next to the claim.
+ */
+export interface PrecisionAttachment {
+  class_id: string
+  /** the phrase that triggered the attachment */
+  trigger: string
+  note: string
+}
+
+/**
  * One re-execution of a finding's reproduction.
  *
  * Retests are appended, never overwritten: the point is a dated record of what
@@ -224,6 +238,8 @@ export interface Finding extends FindingInput {
   duplicate_of?: string
   /** result of verifying evidence_refs against the filesystem/evidence store */
   evidence_check?: EvidenceRefCheck[]
+  /** derived class-specific false-positive guidance, attached at write time */
+  precision_notes?: PrecisionAttachment[]
   revision: number
   /** set when the closure claim was not granted */
   closure_downgraded?: boolean

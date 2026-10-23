@@ -17,9 +17,13 @@ import { saveEvidence } from "../evidence.ts"
 import { loadScope } from "../config.ts"
 import { configureLimits, describeLimits, isPaced } from "../ratelimit.ts"
 import { startProgress } from "../progress.ts"
+import type { Intensity } from "../types.ts"
 import { enforce, splitTarget, type ToolCtxLike } from "./shared.ts"
 
 const CHECKS = ["dns", "http", "tls", "headers", "fingerprint", "all"] as const
+
+/** Passive requests only; this is the floor the tool authorizes. */
+export const SEC_RECON_MINIMUM_INTENSITY: Intensity = "passive"
 
 function fmtDns(r: Awaited<ReturnType<typeof dnsRecon>>): string {
   const lines = [`dns ${r.host} (${r.durationMs}ms)`]
@@ -95,7 +99,7 @@ export const secRecon = tool({
       ctx: c,
       tool: "sec_recon",
       target,
-      intensity: "passive",
+      intensity: SEC_RECON_MINIMUM_INTENSITY,
       unscoped: true,
       purpose: `${args.check} reconnaissance`,
     })

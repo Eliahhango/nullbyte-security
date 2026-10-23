@@ -9,6 +9,7 @@ set -euo pipefail
 CONFIG_DIR="${NULLBYTE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/nullbyte}"
 RUN_DEPS=1
 RUN_TESTS=1
+RUN_FULL_TESTS=0
 CHECK_ONLY=0
 UNINSTALL=0
 PURGE=0
@@ -27,7 +28,8 @@ Inspects, installs or repairs the NullByte security layer. Re-running is safe.
 Options:
   --check      Inspect only, change nothing, exit 1 if issues are found
   --no-deps    Skip dependency installation
-  --no-test    Skip the test suite
+  --full-test  Run the full test suite instead of the install smoke test
+  --no-test    Skip both the install smoke test and the full suite
   --uninstall  Remove installed links and the managed checkout; keep config and project data
   --purge      Uninstall and also remove the NullByte config directory
   -h, --help   Show this help
@@ -159,6 +161,7 @@ for arg in "$@"; do
   case "$arg" in
     --check) CHECK_ONLY=1; RUN_DEPS=0; RUN_TESTS=0 ;;
     --no-deps) RUN_DEPS=0 ;;
+    --full-test|--strict-test) RUN_FULL_TESTS=1 ;;
     --no-test|--skip-tests) RUN_TESTS=0 ;;
     --uninstall) UNINSTALL=1 ;;
     --purge) UNINSTALL=1; PURGE=1 ;;
@@ -385,11 +388,36 @@ inspect_dir() {
     issue "$label is missing"
   else
     ok "$label exists"
-    return 0
   fi
-  [ "$CHECK_ONLY" -eq 1 ] && return 0
+}
+
+inspect_link() {
+  local src="$1" dest="$2" label="$3"
+
+  if [ -L "$dest" ] && [ -e "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+    ok "$label is linked"
+  elif [ -L "$dest" ] && [ ! -e "$dest" ]; then
+    issue "$label is a broken symlink"
+  elif [ -L "$dest" ]; then
+    issue "$label points elsewhere: $(readlink "$dest")"
+  elif [ -e "$dest" ]; then
+    issue "$label is a regular file/directory"
+  else
+    issue "$label is missing"
+  fi
+}
+
+# Repairs are deliberately deferred until after validation: a failed smoke test
+# must leave the previously working installation untouched.
+repair_dir() {
+  local dir="$1" label="$2" needed=0
+  if [ -L "$dir" ] && [ ! -e "$dir" ]; then needed=1; fi
+  if [ -e "$dir" ] && [ ! -d "$dir" ]; then needed=1; fi
+  if [ ! -d "$dir" ]; then needed=1; fi
   ensure_dir "$dir"
-  fixed "$label repaired"
+  if [ "$needed" -eq 1 ]; then
+    fixed "$label repaired"
+  fi
 }
 
 repair_link() {
@@ -399,18 +427,6 @@ repair_link() {
     ok "$label is linked"
     return 0
   fi
-
-  if [ -L "$dest" ] && [ ! -e "$dest" ]; then
-    issue "$label is a broken symlink"
-  elif [ -L "$dest" ]; then
-    issue "$label points elsewhere: $(readlink "$dest")"
-  elif [ -e "$dest" ]; then
-    issue "$label is a regular file/directory"
-  else
-    issue "$label is missing"
-  fi
-
-  [ "$CHECK_ONLY" -eq 1 ] && return 0
 
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     local backup="$dest.bak.$(date +%Y%m%d%H%M%S)"
@@ -424,8 +440,8 @@ repair_link() {
 
 inspect_dir "$CONFIG_DIR" "config root"
 inspect_dir "$CONFIG_DIR/plugin" "plugin directory"
-repair_link "$REPO_DIR/security-lib" "$CONFIG_DIR/security-lib" "security-lib"
-repair_link "$REPO_DIR/plugin/nullbyte-security.ts" "$CONFIG_DIR/plugin/nullbyte-security.ts" "security plugin"
+inspect_link "$REPO_DIR/security-lib" "$CONFIG_DIR/security-lib" "security-lib"
+inspect_link "$REPO_DIR/plugin/nullbyte-security.ts" "$CONFIG_DIR/plugin/nullbyte-security.ts" "security plugin"
 
 # ---- inspect dependencies and the CLI -----------------------------------
 if [ -d "$REPO_DIR/node_modules/@opencode-ai/plugin" ]; then
@@ -500,22 +516,41 @@ elif [ "$NEED_DEPS" -eq 1 ] || [ "$NEED_MCP_DEPS" -eq 1 ]; then
   note "dependency repair skipped (--no-deps); installation may be incomplete"
 fi
 
-# ---- tests ---------------------------------------------------------------
+# ---- validation before touching the installed links ----------------------
 if [ "$RUN_TESTS" -eq 1 ]; then
   TEST_LOG="$(mktemp "${TMPDIR:-/tmp}/nullbyte-install.XXXXXX")"
-  ui_spin_start "Running tests"
-  if ! (cd "$REPO_DIR" && npm test --silent >"$TEST_LOG" 2>&1); then
-    ui_spin_stop "Tests failed" 1
+  if [ "$RUN_FULL_TESTS" -eq 1 ]; then
+    TEST_NAME="full test suite"
+    TEST_ARGS=(npm test --silent)
+  else
+    TEST_NAME="install smoke test"
+    TEST_ARGS=(npm run test:install --silent)
+  fi
+  ui_spin_start "Running $TEST_NAME"
+  if ! (cd "$REPO_DIR" && "${TEST_ARGS[@]}" >"$TEST_LOG" 2>&1); then
+    ui_spin_stop "$TEST_NAME failed" 1
     cat "$TEST_LOG" >&2
     rm -f "$TEST_LOG"
-    ui_error "Test suite failed; installation left in place for inspection"
+    ui_error "$TEST_NAME failed; installed links were not changed"
+    if [ "$RUN_FULL_TESTS" -eq 1 ]; then
+      note "the full suite is optional; rerun without --full-test to use the install smoke test"
+    else
+      note "the checkout is intact; fix the runtime error above and rerun the installer"
+    fi
+    note "an existing installation, if present, is still the one from before this run"
     exit 1
   fi
-  ui_spin_stop "Tests passed"
+  ui_spin_stop "$TEST_NAME passed"
   TEST_SUMMARY="$(awk '/^ℹ (tests|pass|fail) / { printf "%s%s %s", sep, $2, $3; sep="  ·  " }' "$TEST_LOG")"
   [ -n "$TEST_SUMMARY" ] && note "$TEST_SUMMARY"
   rm -f "$TEST_LOG"
 fi
+
+# ---- apply the installation ---------------------------------------------
+repair_dir "$CONFIG_DIR" "config root"
+repair_dir "$CONFIG_DIR/plugin" "plugin directory"
+repair_link "$REPO_DIR/security-lib" "$CONFIG_DIR/security-lib" "security-lib"
+repair_link "$REPO_DIR/plugin/nullbyte-security.ts" "$CONFIG_DIR/plugin/nullbyte-security.ts" "security plugin"
 
 # ---- verify the result ---------------------------------------------------
 ui_info "Verifying installation"

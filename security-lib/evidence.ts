@@ -33,6 +33,16 @@ export interface EvidenceRecord {
 
 const MAX_EVIDENCE_BYTES = 256 * 1024
 
+/**
+ * Per-project retention bounds. The reference limit bounds what one finding may
+ * cite; these bound the store itself so a long engagement cannot fill the disk.
+ * Hitting a bound is reported and the new artifact is refused — never silently
+ * dropped, because an evidence id that was issued but not stored is worse than
+ * a clear refusal.
+ */
+export const MAX_EVIDENCE_ARTIFACTS = 1000
+export const MAX_EVIDENCE_STORE_BYTES = 256 * 1024 * 1024
+
 function indexPath(root: string): string {
   return join(root, "evidence", "index.json")
 }
@@ -109,6 +119,44 @@ export interface SaveEvidenceResult {
   problems: string[]
 }
 
+export interface EvidenceStoreStats {
+  artifacts: number
+  bytes: number
+  maxArtifacts: number
+  maxBytes: number
+  full: boolean
+}
+
+/** Current store size against the retention bounds, for reporting and tests. */
+export function evidenceStoreStats(root: string): EvidenceStoreStats {
+  const records = readIndex(root)
+  const bytes = records.reduce((n, r) => n + (Number.isFinite(r.bytes) ? r.bytes : 0), 0)
+  return {
+    artifacts: records.length,
+    bytes,
+    maxArtifacts: MAX_EVIDENCE_ARTIFACTS,
+    maxBytes: MAX_EVIDENCE_STORE_BYTES,
+    full: records.length >= MAX_EVIDENCE_ARTIFACTS || bytes >= MAX_EVIDENCE_STORE_BYTES,
+  }
+}
+
+function retentionProblem(stats: EvidenceStoreStats, incoming: number): string | undefined {
+  if (stats.artifacts >= MAX_EVIDENCE_ARTIFACTS) {
+    return (
+      `evidence store is full: ${stats.artifacts}/${MAX_EVIDENCE_ARTIFACTS} artifacts. ` +
+      `Prune artifacts that no finding cites (remove the file and its index entry together, after ` +
+      `detaching it from the finding) before capturing more.`
+    )
+  }
+  if (stats.bytes + incoming > MAX_EVIDENCE_STORE_BYTES) {
+    return (
+      `evidence store would exceed ${MAX_EVIDENCE_STORE_BYTES} bytes ` +
+      `(${stats.bytes} stored + ${incoming} new). Store a smaller artifact or prune uncited evidence first.`
+    )
+  }
+  return undefined
+}
+
 export function saveEvidence(root: string, input: SaveEvidenceInput): SaveEvidenceResult {
   if (!input.content || !input.content.trim()) return { problems: ["evidence content is empty"] }
   if (!input.label?.trim()) return { problems: ["evidence label is required"] }
@@ -122,15 +170,23 @@ export function saveEvidence(root: string, input: SaveEvidenceInput): SaveEviden
     truncated = true
   }
 
-  const id = `E-${randomUUID().slice(0, 8)}`
-  const file = `${id}.txt`
-  const dir = ensureDir(join(root, "evidence"))
-
   // Hash exactly what lands on disk, marker included. Hashing the in-memory text
   // instead would make the recorded hash unverifiable for any artifact large
   // enough to be truncated — the check would report tampering on a file nobody
   // had touched.
   const body = truncated ? `${text}\n...[truncated by evidence store]...\n` : text
+
+  // Read the index and check the retention bounds BEFORE writing the artifact.
+  // Writing first and refusing afterwards would leave an unreferenced file on
+  // disk every time the store is full.
+  const index = readIndex(root)
+  const stats = evidenceStoreStats(root)
+  const retention = retentionProblem(stats, Buffer.byteLength(body, "utf8"))
+  if (retention) return { problems: [retention] }
+
+  const id = `E-${randomUUID().slice(0, 8)}`
+  const file = `${id}.txt`
+  const dir = ensureDir(join(root, "evidence"))
   // the hash covers the plaintext payload, so it survives a re-encrypt; and with
   // encryption off that is still exactly the bytes on disk
   writeProtectedFile(join(dir, file), body)
@@ -148,7 +204,6 @@ export function saveEvidence(root: string, input: SaveEvidenceInput): SaveEviden
     truncated,
     file,
   }
-  const index = readIndex(root)
   index.push(record)
   writeIndex(root, index)
   return { record, problems: [] }

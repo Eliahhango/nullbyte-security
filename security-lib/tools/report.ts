@@ -16,6 +16,7 @@ import {
   scrubReport,
   renderMarkdown,
   renderJson,
+  reportWarnings,
   writeReport,
   ALL_FORMATS,
   INTEROP_FORMATS,
@@ -173,9 +174,18 @@ export const secReport = tool({
       ...(threatModels.length ? { threatModels } : {}),
     }
 
+    const warnings = reportWarnings(findings)
     if (args.action === "preview") {
       const md = renderMarkdown(input)
-      return redact ? scrubReport(input, md) : md
+      const body = redact ? scrubReport(input, md) : md
+      if (!warnings.length) return body
+      return [
+        "## Report preflight warnings",
+        "",
+        ...warnings.map((w) => `- ${w.message}`),
+        "",
+        body,
+      ].join("\n")
     }
 
     const formats: ReportFormat[] =
@@ -218,6 +228,10 @@ export const secReport = tool({
         `  note: this report spans ${hosts.length} hosts (${hosts.join(", ")}) and was written to the shared reports/ ` +
           `directory — pass target=<host> to file it under a single target's directory`,
       )
+    }
+    if (res.warnings.length) {
+      lines.push("", "PREFLIGHT WARNINGS:")
+      lines.push(...res.warnings.map((w) => `  - ${w.message}`))
     }
     if (res.pdf && !res.pdf.ok) {
       lines.push(`  pdf  NOT WRITTEN — ${res.pdf.reason}`)

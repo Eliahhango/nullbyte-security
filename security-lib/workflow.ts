@@ -34,7 +34,10 @@ A. Context (optional). Call sec_scope once if you need to know the authorization
 B. Load the matching playbook when the task is not a plain assessment. Use
    sec_methodology search/load for ctf-sprint, agentic-assessment,
    secure-code-review, vulnerability-remediation, ci-security-gate or
-   application-assessment. Playbooks are guidance, not permission.
+   application-assessment. For general software work, load coding skills such
+   as feature-delivery, debugging, test-strategy, refactoring, performance,
+   dependency-upgrade, code-review or api-contract. Playbooks are guidance, not
+   permission.
 
 C. Recon. Gather evidence with sec_recon (check=dns|http|tls|headers|fingerprint)
    and sec_ports. Start passive, escalate as the objective requires.

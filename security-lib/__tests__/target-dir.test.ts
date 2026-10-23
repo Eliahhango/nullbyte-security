@@ -186,8 +186,8 @@ test("writeTargetLog: lands under the target's logs/ and stores verbatim by defa
   assert.ok(body.includes("S3cr3tPr0d"), "the credential was hidden from the log")
   assert.ok(body.includes("nmap -sT -- app.acme.test"), "the command was not recorded")
   assert.ok(body.includes("## stdout"), "stdout section missing")
-  // Logs can hold credentials, so they are not world-readable.
-  assert.equal(statSync(res!.path).mode & 0o777, 0o600)
+  // Logs can hold credentials, so they are not world-readable on POSIX.
+  if (process.platform !== "win32") assert.equal(statSync(res!.path).mode & 0o777, 0o600)
 })
 
 test("writeTargetLog: includeSecrets:false redacts the log at capture", () => {

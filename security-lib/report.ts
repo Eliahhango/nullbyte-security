@@ -514,6 +514,14 @@ export function renderMarkdown(input: ReportInput): string {
       lines.push(`${esc(f.ruled_out_by)}${f.ruled_out_at ? ` — at ${esc(f.ruled_out_at)}` : ""}`)
       lines.push("")
     }
+    if (f.precision_notes?.length) {
+      lines.push("**Precision checks**")
+      lines.push("")
+      for (const note of f.precision_notes) {
+        lines.push(`- **${esc(note.class_id)}** (${esc(note.trigger)}): ${esc(note.note)}`)
+      }
+      lines.push("")
+    }
     lines.push("**Evidence**")
     lines.push("")
     lines.push("```")
@@ -918,6 +926,9 @@ ${block("Description", f.description)}
 ${block("Impact", f.impact)}
 ${block("Demonstrated by", f.demonstrated_by)}
 ${f.ruled_out_by ? block("Ruled out by", `${f.ruled_out_by}${f.ruled_out_at ? ` — at ${f.ruled_out_at}` : ""}`) : ""}
+${f.precision_notes?.length ? `<section><h3>Precision checks</h3><ul>${f.precision_notes
+  .map((n) => `<li><strong>${escHtml(n.class_id)}</strong> (${escHtml(n.trigger)}): ${escHtml(n.note)}</li>`)
+  .join("")}</ul></section>` : ""}
 ${block("Evidence", f.evidence)}
 ${block("Reproduction", f.reproduction)}
 ${f.retests?.length ? `<section><h3>Retest history</h3><table class="retests"><thead><tr><th>When</th><th>Verification</th><th>Method</th><th>Observed</th></tr></thead><tbody>${f.retests
@@ -1291,9 +1302,39 @@ export interface WrittenFile {
   path: string
 }
 
+/**
+ * A report that presents an unproven high/critical candidate as settled risk is
+ * misleading, so the preflight surfaces it rather than silently exporting.
+ * Warnings do not block the export: the operator may deliberately be reporting
+ * an unresolved candidate, and the report already carries its closure state.
+ */
+export interface ReportWarning {
+  id: string
+  title: string
+  severity: "critical" | "high"
+  closure: "open_proof_gap"
+  message: string
+}
+
+export function reportWarnings(findings: readonly Finding[]): ReportWarning[] {
+  return findings
+    .filter((f) => (f.severity === "critical" || f.severity === "high") && f.closure === "open_proof_gap")
+    .map((f) => ({
+      id: f.id,
+      title: f.title,
+      severity: f.severity as "critical" | "high",
+      closure: f.closure as "open_proof_gap",
+      message:
+        `${f.id} "${f.title}" is rated ${f.severity} but its closure is open_proof_gap — ` +
+        `the impact is unproven. Confirm it or qualify the severity before distribution.`,
+    }))
+}
+
 export interface WriteReportResult {
   dir: string
   files: WrittenFile[]
+  /** preflight issues that do not block export but should be shown to the operator */
+  warnings: ReportWarning[]
   /** present when pdf was requested */
   pdf?: { ok: boolean; reason?: string; hint?: string }
   markdown: string
@@ -1342,7 +1383,8 @@ export function writeReport(root: string, input: ReportInput, opts: WriteReportO
   const sarif = clean(renderSarif(input))
   const csv = clean(renderCsv(input))
   const files: WrittenFile[] = []
-  const out: WriteReportResult = { dir, files, markdown, html }
+  const warnings = reportWarnings(input.findings)
+  const out: WriteReportResult = { dir, files, warnings, markdown, html }
 
   const emit = (format: ReportFormat, ext: string, body: string) => {
     if (!formats.includes(format)) return

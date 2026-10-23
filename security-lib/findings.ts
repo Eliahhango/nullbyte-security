@@ -23,7 +23,7 @@ import { readProtectedFile, writeProtectedFile } from "./secure-io.ts"
 import { StoreKeyError } from "./crypto.ts"
 import { ensureDir } from "./paths.ts"
 import { redactSecrets } from "./redact.ts"
-import { validateClosure, type ClosureState } from "./precision.ts"
+import { precisionAttachmentsFor, validateClosure, type ClosureState } from "./precision.ts"
 import { verifyEvidenceRefs, MAX_EVIDENCE_REFS } from "./evidence-refs.ts"
 import {
   SEVERITY_ORDER,
@@ -78,6 +78,7 @@ export const PROTECTED_FIELDS = [
   "cvss_vector",
   "fingerprint",
   "evidence_check",
+  "precision_notes",
   "revision",
 ] as const
 
@@ -349,6 +350,7 @@ export function createFinding(root: string, sessionID: string, input: FindingInp
 
   const scrub = (s: string | undefined) => (s && opts.redactEvidence ? redactSecrets(s) : s)
   const now = new Date().toISOString()
+  const precisionNotes = precisionAttachmentsFor(input)
   const finding: Finding = {
     ...input,
     evidence: scrub(input.evidence),
@@ -365,6 +367,7 @@ export function createFinding(root: string, sessionID: string, input: FindingInp
     cvss_vector,
     fingerprint,
     evidence_check: refReport?.checked.map((c) => ({ ref: c.ref, state: c.state })),
+    precision_notes: precisionNotes.length ? precisionNotes : undefined,
     revision: 1,
     closure_downgraded: verdict.downgraded || undefined,
   }
@@ -512,6 +515,8 @@ export function updateFinding(
   next.closure = verdict.state
   next.closure_downgraded = verdict.downgraded || undefined
   if (refReport) next.evidence_check = refReport.checked.map((c) => ({ ref: c.ref, state: c.state }))
+  const precisionNotes = precisionAttachmentsFor(next)
+  next.precision_notes = precisionNotes.length ? precisionNotes : undefined
   next.status = deriveStatus(verdict.state, changes.status_override)
 
   if (problems.length) return { problems }

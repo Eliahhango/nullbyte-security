@@ -105,10 +105,53 @@ export function converterWorks(c: PdfConverter): boolean {
   return ok
 }
 
-/** The first converter that is installed *and* runs, or null. */
+const renderCache = new Map<string, boolean>()
+
+/**
+ * Does the converter actually render a PDF, not just print a version?
+ *
+ * A stale Chromium that answers `--version` but cannot start headless used to
+ * make the PDF test fail on an otherwise healthy device. Presence and a version
+ * banner are not capability; probe the real output once and cache it.
+ */
+function converterRenders(c: PdfConverter): boolean {
+  const hit = renderCache.get(c.path)
+  if (hit !== undefined) return hit
+
+  let work: string | undefined
+  let ok = false
+  try {
+    work = mkdtempSync(join(tmpdir(), "nullbyte-pdf-probe-"))
+    const res = tryConvert(
+      c,
+      "<!doctype html><html><body><h1>NullByte PDF probe</h1><p>render capability check</p></body></html>",
+      join(work, "probe.pdf"),
+    )
+    ok = res.ok
+  } catch {
+    ok = false
+  } finally {
+    if (work) {
+      try {
+        rmSync(work, { recursive: true, force: true })
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+  renderCache.set(c.path, ok)
+  return ok
+}
+
+/** The first converter that is installed, runs, and renders a real PDF. */
 export function findPdfConverter(force = false): PdfConverter | null {
-  if (force) probeCache.clear()
-  for (const c of present()) if (converterWorks(c)) return c
+  if (force) {
+    probeCache.clear()
+    renderCache.clear()
+  }
+  for (const c of present()) {
+    if (converterWorks(c) && converterRenders(c)) return c
+  }
   return null
 }
 

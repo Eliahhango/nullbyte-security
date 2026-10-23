@@ -316,11 +316,25 @@ test("a scanner run takes the host's exclusive slot", async () => {
 test("an unserialised run stays parallel, so the slot is opt-in", async () => {
   resetRateLimiter()
   configureLimits({ globalConcurrency: 8, perHostConcurrency: 8 })
-  const started = Date.now()
+  // Compare against the same two commands run back-to-back. An absolute
+  // millisecond ceiling is flaky on slow devices where process startup alone
+  // can take longer than the command.
+  const command = [process.execPath, ["-e", "setTimeout(() => {}, 200)"]] as const
+  const serialStart = Date.now()
+  await runArgv(command[0], [...command[1]], { timeoutMs: 5000 })
+  await runArgv(command[0], [...command[1]], { timeoutMs: 5000 })
+  const serial = Date.now() - serialStart
+
+  const parallelStart = Date.now()
   await Promise.all([
-    runArgv("sh", ["-c", "sleep 0.08"], { timeoutMs: 5000 }),
-    runArgv("sh", ["-c", "sleep 0.08"], { timeoutMs: 5000 }),
+    runArgv(command[0], [...command[1]], { timeoutMs: 5000 }),
+    runArgv(command[0], [...command[1]], { timeoutMs: 5000 }),
   ])
-  assert.ok(Date.now() - started < 150, "runs without a host are not paced")
+  const parallel = Date.now() - parallelStart
+
+  assert.ok(
+    parallel < serial * 0.9,
+    `runs without a host should overlap: serial ${serial}ms, parallel ${parallel}ms`,
+  )
   resetRateLimiter()
 })

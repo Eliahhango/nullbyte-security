@@ -251,7 +251,8 @@ test("sarif only writes sarif, and it is a valid document on disk", () => {
   assert.equal(doc.runs[0].results.length, 1)
 })
 
-test("interop exports are owner-only, like every other deliverable", () => {
+test("interop exports are owner-only, like every other deliverable", (t) => {
+  if (process.platform === "win32") return t.skip("Windows does not enforce POSIX mode bits")
   const dir = mkdtempSync(join(tmpdir(), "nb-interop-"))
   const res = writeReport(dir, report([finding()]), { name: "r", outDir: dir, formats: ["sarif", "csv"] })
   assert.equal(res.csvPath, join(dir, "r.csv"))

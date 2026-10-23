@@ -12,6 +12,9 @@ import { startProgress } from "../progress.ts"
 import { saveEvidence } from "../evidence.ts"
 import { enforcePorts, splitTarget, type ToolCtxLike } from "./shared.ts"
 
+/** Connect scans are active but non-destructive. */
+export const SEC_PORTS_MINIMUM_INTENSITY = "safe-active" as const
+
 export const secPorts = tool({
   description:
     "TCP connect port scan against a target. Bounded: explicit ports, concurrency and per-port timeouts, and a " +
@@ -46,7 +49,7 @@ export const secPorts = tool({
       tool: "sec_ports",
       host: target.host,
       ports,
-      intensity: "safe-active",
+      intensity: SEC_PORTS_MINIMUM_INTENSITY,
       purpose: `connect scan of ${ports.length} ports`,
     })
 

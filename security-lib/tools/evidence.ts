@@ -6,7 +6,16 @@
  */
 
 import { tool } from "@opencode-ai/plugin"
-import { listEvidence, readEvidence, resolveEvidence, saveEvidence, verifyEvidence, verifyEvidenceStore } from "../evidence.ts"
+import {
+  evidenceStoreStats,
+  listEvidence,
+  readEvidence,
+  resolveEvidence,
+  saveEvidence,
+  verifyEvidenceStore,
+  MAX_EVIDENCE_ARTIFACTS,
+  MAX_EVIDENCE_STORE_BYTES,
+} from "../evidence.ts"
 import { loadScope } from "../config.ts"
 import type { ToolCtxLike } from "./shared.ts"
 
@@ -14,14 +23,14 @@ export const secEvidence = tool({
   description:
     "Store or retrieve raw evidence supporting a finding. action=save persists output (HTTP transcripts, scanner output, " +
     "banners) and returns an id to reference from sec_finding; the raw value is written to disk verbatim by default and a " +
-    "SHA-256 is recorded. action=list shows stored artifacts; action=get returns one, and refuses if the artifact no longer " +
-    "matches its recorded hash. action=verify re-hashes every artifact so tampering or corruption is detected rather than " +
-    "silently reported as evidence. Prefer storing the minimal artifact " +
+    "SHA-256 is recorded. action=list shows stored artifacts; action=stats reports retention usage; action=get returns one, " +
+    "and refuses if the artifact no longer matches its recorded hash. action=verify re-hashes every artifact so tampering or " +
+    "corruption is detected rather than silently reported as evidence. Prefer storing the minimal artifact " +
     "that demonstrates the issue. The operator's posture is full disclosure, so leaked credentials are kept in the clear and " +
     "appear in the report via sec_report evidence=full. Pass include_secrets=false to redact at capture instead — this is " +
     "irreversible: it cannot be undone by regenerating the report.",
   args: {
-    action: tool.schema.enum(["save", "list", "get", "verify"]).describe("operation"),
+    action: tool.schema.enum(["save", "list", "get", "verify", "stats"]).describe("operation"),
     label: tool.schema.string().optional().describe("short description of what this evidence shows (save)"),
     content: tool.schema.string().optional().describe("raw artifact content (save)"),
     target: tool.schema.string().optional().describe("asset this evidence relates to (save)"),
@@ -50,10 +59,25 @@ export const secEvidence = tool({
       return `stored ${r.id} (${r.bytes} bytes, sha256 ${r.sha256.slice(0, 16)}…)${note}`
     }
 
+    if (args.action === "stats") {
+      const s = evidenceStoreStats(root)
+      return [
+        `evidence store: ${s.artifacts}/${MAX_EVIDENCE_ARTIFACTS} artifacts, ${s.bytes}/${MAX_EVIDENCE_STORE_BYTES} bytes`,
+        s.full
+          ? "AT LEAST ONE RETENTION BOUND IS REACHED — new captures will be refused until uncited artifacts are pruned."
+          : "within retention bounds; new captures are accepted.",
+        "Pruning is manual and deliberate: remove a file and its index entry together, only after detaching it from every finding that cites it. The report cannot cite an artifact that no longer exists.",
+      ].join("\n")
+    }
+
     if (args.action === "list") {
       const rows = listEvidence(root)
       if (!rows.length) return "no evidence stored yet"
-      return rows.map((r) => `${r.id} [${r.source}] ${r.label} — ${r.target ?? "n/a"}, ${r.bytes} bytes, ${r.redacted ? "redacted" : "verbatim"}`).join("\n")
+      const s = evidenceStoreStats(root)
+      return [
+        `store: ${s.artifacts}/${MAX_EVIDENCE_ARTIFACTS} artifacts, ${s.bytes}/${MAX_EVIDENCE_STORE_BYTES} bytes${s.full ? " — FULL" : ""}`,
+        ...rows.map((r) => `${r.id} [${r.source}] ${r.label} — ${r.target ?? "n/a"}, ${r.bytes} bytes, ${r.redacted ? "redacted" : "verbatim"}`),
+      ].join("\n")
     }
 
     if (args.action === "verify") {

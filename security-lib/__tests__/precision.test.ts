@@ -14,6 +14,7 @@ import {
   PRECISION_NOTES,
   getPrecisionNote,
   listPrecisionNoteIds,
+  precisionAttachmentsFor,
   validateClosure,
   type ClosureClaim,
   type ClosureContext,
@@ -82,6 +83,31 @@ test("every precision note is substantive and attached to a real fragment", () =
     assert.ok(ids.has(id), `precision note '${id}' does not match any methodology fragment`)
     assert.ok(note.instructions.length > 120, `precision note '${id}' is too thin to change behaviour`)
   }
+})
+
+test("false-positive shapes attach their class note to the finding", () => {
+  const phar = precisionAttachmentsFor({
+    title: "PHP phar:// metadata deserialization",
+    evidence: "The upload wrapper accepts phar:// paths.",
+  })
+  assert.deepEqual(phar.map((n) => n.class_id), ["insecure-deserialization"])
+  assert.match(phar[0]!.note, /Phar metadata/i)
+
+  assert.deepEqual(
+    precisionAttachmentsFor({ title: "OAuth callback accepts a missing state parameter" }).map((n) => n.class_id),
+    ["auth-session"],
+  )
+  assert.deepEqual(precisionAttachmentsFor({ title: "Kubelet 401 on the pods endpoint" }).map((n) => n.class_id), [
+    "access-control",
+  ])
+  assert.deepEqual(
+    precisionAttachmentsFor({ title: "Django SECRET_KEY disclosed in the debug page" }).map((n) => n.class_id),
+    ["recon-web"],
+  )
+  assert.deepEqual(
+    precisionAttachmentsFor({ title: "NoSQL injection when security.javascriptEnabled is true" }).map((n) => n.class_id),
+    ["sqli"],
+  )
 })
 
 test("precision notes say what is NOT proof, not just what to do", () => {

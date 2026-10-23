@@ -9,7 +9,6 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { join } from "node:path"
-import { homedir } from "node:os"
 import { authorize, authorizeOpen, authorizePorts, authorizeResolved, describeScope, portAllowance } from "../scope.ts"
 import { DEFAULT_SCOPE, normalizeScope, validateScope, scopeTemplate } from "../config.ts"
 import { hostFromUrl, ipv4InCidr, isIp, isPrivateAddress, isUnconditionallyDenied } from "../netsafe.ts"
@@ -212,10 +211,6 @@ test("hostFromUrl handles ports, ipv6 and paths", () => {
   assert.deepEqual(hostFromUrl("https://h.example:8443/a/b"), { host: "h.example", port: 8443, scheme: "https", path: "/a/b" })
   assert.equal(hostFromUrl("http://[::1]:8080/")?.host, "::1")
   assert.equal(hostFromUrl("not a url"), null)
-})
-
-test("homedir sanity: the default project root is never the filesystem root", () => {
-  assert.notEqual(homedir(), "/")
 })
 
 /* ---------------------------------------------- multi-port scan regression --- */

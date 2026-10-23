@@ -28,6 +28,24 @@ import { enforce, enforcePorts, projectRootFor, scopeFor, splitTarget, type Tool
 import type { Intensity, Severity } from "../types.ts"
 
 const ADAPTERS = ["nmap", "nuclei", "nikto", "whatweb", "sslscan", "sqlmap"] as const
+
+/** The floor for a scanner that has no distinct intrusive mode. */
+export const SEC_SCAN_MINIMUM_INTENSITY: Intensity = "safe-active"
+
+/** Per-adapter floors; sqlmap is always intrusive. */
+export const ADAPTER_MINIMUM_INTENSITY: Record<(typeof ADAPTERS)[number], Intensity> = {
+  nmap: "safe-active",
+  nuclei: "safe-active",
+  nikto: "safe-active",
+  whatweb: "safe-active",
+  sslscan: "safe-active",
+  sqlmap: "intrusive",
+}
+
+export function scanMinimumIntensity(adapter: (typeof ADAPTERS)[number], profile?: string): Intensity {
+  if (adapter === "nmap" && profile === "intrusive") return "intrusive"
+  return ADAPTER_MINIMUM_INTENSITY[adapter]
+}
 const SEV = ["info", "low", "medium", "high", "critical"] as const
 
 export const secScan = tool({
@@ -73,8 +91,7 @@ export const secScan = tool({
     const bin = avail.tool.path!
 
     const target = splitTarget(args.target)
-    const intensity: Intensity =
-      toolId === "nmap" && args.profile === "intrusive" ? "intrusive" : toolId === "sqlmap" ? "intrusive" : "safe-active"
+    const intensity = scanMinimumIntensity(toolId, args.profile)
 
     const loaded = scopeFor(c.worktree)
     configureLimits(loaded.scope.limits)

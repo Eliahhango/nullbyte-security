@@ -62,7 +62,8 @@ test("a directory is not evidence", () => {
   assert.deepEqual(report.missing, ["./sub"])
 })
 
-test("a permission failure is 'unchecked', never 'missing'", () => {
+test("a permission failure is 'unchecked', never 'missing'", (t) => {
+  if (process.platform === "win32") return t.skip("Windows does not enforce POSIX mode bits")
   const dir = root()
   const locked = join(dir, "locked")
   mkdirSync(locked)

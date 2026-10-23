@@ -27,6 +27,7 @@ import {
 } from "../findings.ts"
 import { CLOSURE_GUIDANCE } from "../precision.ts"
 import { loadScope } from "../config.ts"
+import { writeAudit } from "../audit.ts"
 import type { FindingInput, Severity, VerificationStatus } from "../types.ts"
 import type { ToolCtxLike } from "./shared.ts"
 
@@ -157,6 +158,10 @@ export const secFinding = tool({
         lines.push("", `closure downgraded from '${res.requestedClosure}' to '${f.closure}':`)
         lines.push(...res.problems.map((p) => `  - ${p}`))
       }
+      if (f.precision_notes?.length) {
+        lines.push("", "precision checks:")
+        lines.push(...f.precision_notes.map((n) => `  - ${n.class_id} (${n.trigger}): ${n.note}`))
+      }
       const check = f.evidence_check
       if (check?.length) {
         lines.push("", `evidence refs: ${check.map((r) => `${r.ref}=${r.state}`).join(", ")}`)
@@ -172,6 +177,16 @@ export const secFinding = tool({
       if (res.similar?.length) {
         lines.push("", `similar existing findings (not merged): ${res.similar.map((s) => `${s.finding.id} ${(s.similarity * 100).toFixed(0)}%`).join(", ")}`)
       }
+      writeAudit(root, {
+        sessionID: c.sessionID,
+        agent: c.agent,
+        tool: "sec_finding",
+        decision: "allow",
+        code: "finding.create",
+        reason: `recorded ${f.id} (${f.severity}, closure ${f.closure})`,
+        args: f.id,
+        targets: f.target ? [f.target] : undefined,
+      })
       return lines.join("\n")
     }
 
@@ -245,6 +260,20 @@ export const secFinding = tool({
       lines.push("", "closure downgraded:")
       lines.push(...res.problems.map((p) => `  - ${p}`))
     }
+    if (res.finding.precision_notes?.length) {
+      lines.push("", "precision checks:")
+      lines.push(...res.finding.precision_notes.map((n) => `  - ${n.class_id} (${n.trigger}): ${n.note}`))
+    }
+    writeAudit(root, {
+      sessionID: c.sessionID,
+      agent: c.agent,
+      tool: "sec_finding",
+      decision: "allow",
+      code: "finding.update",
+      reason: `updated ${res.finding.id} to revision ${res.finding.revision}: ${args.reason}`,
+      args: res.finding.id,
+      targets: res.finding.target ? [res.finding.target] : undefined,
+    })
     return lines.join("\n")
   },
 })
