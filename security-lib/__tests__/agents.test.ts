@@ -17,6 +17,8 @@ type Behaviour = {
   error?: string
   delay?: number
   hang?: boolean
+  /** fail this many times before returning output */
+  failFirst?: number
 }
 
 function fakeClient(options: {
@@ -31,6 +33,7 @@ function fakeClient(options: {
   let sequence = 0
   let active = 0
   let maxActive = 0
+  const attempts = new Map<string, number>()
 
   const client: AgentClient = {
     app: {
@@ -60,12 +63,15 @@ function fakeClient(options: {
           model: input.body?.model,
         })
         const spec = behaviour[parent.title] ?? {}
+        const seen = (attempts.get(parent.title) ?? 0) + 1
+        attempts.set(parent.title, seen)
         active += 1
         maxActive = Math.max(maxActive, active)
         try {
           if (spec.hang) await new Promise<never>(() => {})
           await delay(spec.delay ?? 5)
-          if (spec.error) return { error: { message: spec.error } }
+          if (spec.error && seen <= (spec.failFirst ?? 0)) return { error: { message: spec.error } }
+          if (spec.error && spec.failFirst === undefined) return { error: { message: spec.error } }
           return { data: { parts: [{ type: "text", text: spec.output ?? `result:${parent.title}` }] } }
         } finally {
           active -= 1
@@ -284,4 +290,57 @@ test("plan parsing accepts fenced JSON and object or array plans", () => {
   assert.deepEqual(parseAgentPlan('```json\n{"tasks":[]}\n```'), { tasks: [] })
   assert.deepEqual(parseAgentPlan('prefix [{"id":"a"}] suffix'), [{ id: "a" }])
   assert.throws(() => parseAgentPlan("not json"), /parseable JSON/)
+})
+
+
+test("transient provider failures are retried in a fresh child session", async () => {
+  const fake = fakeClient({
+    behaviour: {
+      A: { error: "The socket connection was closed unexpectedly", failFirst: 1, output: "recovered" },
+    },
+  })
+  const result = await runAgentPlan({
+    client: fake.client,
+    parentID: "parent",
+    directory: "/tmp/project",
+    objective: "retry transport",
+    tasks: [task("a")],
+    retries: 1,
+  })
+
+  assert.equal(result.tasks[0]?.status, "completed")
+  assert.equal(result.tasks[0]?.output, "recovered")
+  assert.equal(fake.created.length, 2, "one failed attempt plus one fresh session")
+  assert.ok(fake.aborts.includes(fake.created[0]!.id), "the failed child is aborted before the retry")
+})
+
+test("non-transient child errors are not retried", async () => {
+  const fake = fakeClient({ behaviour: { A: { error: "tool rejected the request" } } })
+  const result = await runAgentPlan({
+    client: fake.client,
+    parentID: "parent",
+    directory: "/tmp/project",
+    objective: "no retry",
+    tasks: [task("a")],
+    retries: 5,
+  })
+
+  assert.equal(result.tasks[0]?.status, "failed")
+  assert.equal(fake.created.length, 1)
+})
+
+test("retries=0 disables the transport retry", async () => {
+  const fake = fakeClient({ behaviour: { A: { error: "unknown certificate verification error" } } })
+  const result = await runAgentPlan({
+    client: fake.client,
+    parentID: "parent",
+    directory: "/tmp/project",
+    objective: "retry disabled",
+    tasks: [task("a")],
+    retries: 0,
+  })
+
+  assert.equal(result.tasks[0]?.status, "failed")
+  assert.equal(fake.created.length, 1)
+  assert.match(result.tasks[0]?.error ?? "", /certificate verification/)
 })

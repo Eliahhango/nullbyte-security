@@ -12,6 +12,8 @@ import { secEvidence } from "./evidence.ts"
 import { secFinding } from "./findings.ts"
 import { secRetest } from "./retest.ts"
 import { secReport } from "./report.ts"
+import { secCoverage } from "./coverage.ts"
+import { secThreatModel } from "./threat-model.ts"
 import { secMethodology, secAudit } from "./knowledge.ts"
 import type { AgentClient } from "../agents.ts"
 
@@ -24,6 +26,8 @@ export const SECURITY_TOOL_IDS = [
   "sec_sast",
   "sec_evidence",
   "sec_finding",
+  "sec_coverage",
+  "sec_threat_model",
   "sec_retest",
   "sec_report",
   "sec_methodology",
@@ -46,6 +50,8 @@ export function buildSecurityTools(options: BuildSecurityToolsOptions = {}): Rec
     sec_sast: secSast,
     sec_evidence: secEvidence,
     sec_finding: secFinding,
+    sec_coverage: secCoverage,
+    sec_threat_model: secThreatModel,
     sec_retest: secRetest,
     sec_report: secReport,
     sec_methodology: secMethodology,

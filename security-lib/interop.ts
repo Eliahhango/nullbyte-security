@@ -24,6 +24,7 @@
 
 import { SEVERITY_ORDER, type Severity } from "./types.ts"
 import type { ReportInput } from "./report.ts"
+import { coverageSummary } from "./coverage.ts"
 
 const SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 const TOOL_NAME = "NullByte Security"
@@ -67,6 +68,10 @@ function localRef(input: ReportInput, refs: string[] | undefined): { uri: string
 
 export function renderSarif(input: ReportInput): string {
   const generated = input.generatedAt ?? new Date().toISOString()
+  const coverage =
+    input.coverage === undefined
+      ? undefined
+      : input.coverageSummary ?? coverageSummary(input.coverage, input.findings)
 
   // one rule per distinct identity, so a dashboard groups rather than repeats
   const rules = new Map<string, { id: string; name: string; description: string; level: string; tags: string[] }>()
@@ -169,7 +174,30 @@ export function renderSarif(input: ReportInput): string {
                   text: `engagement '${input.engagement}'; ${input.selectionNote ?? "all findings in scope"}`,
                 },
               },
+              ...(coverage
+                ? [
+                    {
+                      level: coverage.needs_follow_up > 0 || coverage.findings_without_coverage.length > 0 ? "warning" : "note",
+                      message: {
+                        text: coverage.empty
+                          ? "coverage ledger empty — the absence of results is not evidence that the target was tested"
+                          : `coverage: ${coverage.total} observation(s); ${coverage.needs_follow_up} need follow-up; ` +
+                            `${coverage.findings_without_coverage.length} finding(s) have no linked coverage entry`,
+                      },
+                    },
+                  ]
+                : []),
             ],
+            properties: coverage
+              ? {
+                  coverage: {
+                    total: coverage.total,
+                    byOutcome: coverage.by_outcome,
+                    needsFollowUp: coverage.needs_follow_up,
+                    findingsWithoutCoverage: coverage.findings_without_coverage.length,
+                  },
+                }
+              : undefined,
           },
         ],
         results,

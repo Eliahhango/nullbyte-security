@@ -15,8 +15,9 @@ export function createSecAgents(client?: AgentClient) {
       "Run a multi-agent plan. Give an objective and 1-8 non-overlapping tasks; each task gets its own child " +
       "session/agent, independent tasks run in parallel up to the concurrency limit, and depends_on gates the " +
       "order. If tasks are omitted, a planner subagent decomposes the objective first. The tool monitors every " +
-      "agent, aborts on timeout/cancel, and returns each task's output and session id. Use this for large " +
-      "assessments; use the normal tools for small work.",
+      "agent, aborts on timeout/cancel, and returns each task's output and session id. Transient provider " +
+      "network/TLS failures are retried in a fresh child session. Use this for large assessments; use the normal " +
+      "tools for small work.",
     args: {
       objective: tool.schema.string().describe("the overall outcome the plan must achieve"),
       tasks: tool.schema
@@ -34,6 +35,13 @@ export function createSecAgents(client?: AgentClient) {
       agent: tool.schema.string().optional().describe("default subagent for tasks that do not name one"),
       concurrency: tool.schema.number().int().min(1).max(8).optional().describe("parallel agents (default 4)"),
       timeout_ms: tool.schema.number().int().min(1000).optional().describe("per-task timeout (default 15 minutes)"),
+      retries: tool.schema
+        .number()
+        .int()
+        .min(0)
+        .max(5)
+        .optional()
+        .describe("additional attempts after a transient provider network/TLS failure (default 2)"),
     },
     async execute(args, c) {
       if (!client) throw new Error("multi-agent orchestration is unavailable: the plugin was built without its runtime client")
@@ -53,6 +61,7 @@ export function createSecAgents(client?: AgentClient) {
           agent: args.agent,
           concurrency: args.concurrency,
           timeoutMs: args.timeout_ms,
+          retries: args.retries,
           signal: c.abort,
           hooks: {
             onPlanStart: () => progress.update(`agents · planning ${label}`),

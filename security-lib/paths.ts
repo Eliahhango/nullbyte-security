@@ -72,6 +72,8 @@ export interface EngagementPaths {
   evidenceDir: string
   reportsDir: string
   audit: string
+  coverage: string
+  threatModels: string
 }
 
 export function engagementPaths(worktree: string): EngagementPaths {
@@ -83,6 +85,8 @@ export function engagementPaths(worktree: string): EngagementPaths {
     evidenceDir: join(root, "evidence"),
     reportsDir: join(root, "reports"),
     audit: join(root, "audit.jsonl"),
+    coverage: join(root, "coverage.json"),
+    threatModels: join(root, "threat-models.json"),
   }
 }
 

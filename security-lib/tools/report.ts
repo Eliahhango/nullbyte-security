@@ -10,6 +10,8 @@ import { describeScope, authorize } from "../scope.ts"
 import { readAllFindings, severitySummary } from "../findings.ts"
 import { selectReportData, describeDrops, hostOf, sessionHosts } from "../report-selection.ts"
 import { listEvidence, readEvidence } from "../evidence.ts"
+import { coverageSummary, listCoverage, selectCoverage } from "../coverage.ts"
+import { getThreatModel } from "../threat-model.ts"
 import {
   scrubReport,
   renderMarkdown,
@@ -38,9 +40,11 @@ export const secReport = tool({
     "PDF needs a converter (weasyprint, chrome or chromium) " +
     "and is reported honestly when none is installed. " +
     "evidence=full embeds the full stored content of every artifact, not just the index. " +
-    "Every report carries an executive summary, background and objectives, timeline, a severity summary with a findings " +
-    "index, a Credentials section, the findings, a prioritised remediation roadmap, the evidence, limitations, a " +
-    "risk-rating appendix, revision history and a disclaimer. " +
+    "Every report carries an executive summary, background and objectives, threat model, timeline, a severity summary with " +
+    "a findings index, a coverage ledger, a Credentials section, the findings, a prioritised remediation roadmap, the " +
+    "evidence, limitations, a risk-rating appendix, revision history and a disclaimer. The coverage ledger is selected by " +
+    "the same coverage mode as the findings; a report with no ledger entries says so rather than implying the target was " +
+    "tested. " +
     "coverage controls which findings are included and defaults to 'session' — only what this scan session recorded. " +
     "The store is engagement-wide, so 'engagement' would mix every earlier session and every other target into the " +
     "report; use it deliberately, not by accident. Findings on a host outside the authorized scope are always excluded. " +
@@ -117,6 +121,28 @@ export const secReport = tool({
           : "every session in the engagement store"
     const selectionNote = [covered, dropped].filter(Boolean).join(" — ")
 
+    // Contacted hosts come from the audit trail, not just the findings: a
+    // session can touch a target and record nothing, and that report still
+    // belongs under the target it was about.
+    const hosts = [
+      ...new Set([
+        ...sessionHosts(readAudit(root, 0), c.sessionID),
+        ...selection.findings.map((f) => hostOf(f.target)).filter((h): h is string => !!h),
+      ]),
+    ].sort()
+    const reportHost = args.target ? (hostOf(args.target) ?? undefined) : hosts.length === 1 ? hosts[0] : undefined
+
+    const coverageHost = coverage === "target" ? hostOf(args.target ?? "") ?? undefined : undefined
+    const reportCoverage = selectCoverage(listCoverage(root, { limit: 1000 }), {
+      sessionID: coverage === "session" ? c.sessionID : undefined,
+      host: coverageHost,
+    })
+    const reportCoverageSummary = coverageSummary(reportCoverage, findings)
+    const threatTarget = args.target ?? reportHost
+    const threatModels = threatTarget
+      ? [getThreatModel(root, threatTarget, c.directory || c.worktree)].filter((m): m is NonNullable<typeof m> => !!m)
+      : []
+
     const evidenceContent: Record<string, string> | undefined =
       evidenceMode === "full"
         ? Object.fromEntries(
@@ -142,6 +168,9 @@ export const secReport = tool({
       background: args.background,
       objectives: args.objectives,
       testWindow: args.test_window,
+      coverage: reportCoverage,
+      coverageSummary: reportCoverageSummary,
+      ...(threatModels.length ? { threatModels } : {}),
     }
 
     if (args.action === "preview") {
@@ -160,17 +189,6 @@ export const secReport = tool({
     // host lands beside that host's logs. A report spanning several hosts cannot
     // live in any single one, so it falls back to a shared reports/ directory
     // rather than being filed under a host it does not exclusively describe.
-    //
-    // Contacted hosts come from the audit trail, not from the findings: a
-    // session can touch a target and record nothing, and that report still
-    // belongs under the target it was about.
-    const hosts = [
-      ...new Set([
-        ...sessionHosts(readAudit(root, 0), c.sessionID),
-        ...selection.findings.map((f) => hostOf(f.target)).filter((h): h is string => !!h),
-      ]),
-    ].sort()
-    const reportHost = args.target ? (hostOf(args.target) ?? undefined) : hosts.length === 1 ? hosts[0] : undefined
     const outDir = args.out_dir
       ? resolve(args.out_dir)
       : reportHost
@@ -184,7 +202,7 @@ export const secReport = tool({
       tool: "sec_report",
       decision: "allow",
       code: redact ? "report.export" : "report.export.unredacted",
-      reason: `exported ${findings.length} findings as ${formats.join("+")}; coverage=${coverage}; evidence=${evidenceMode}; redact=${redact}`,
+      reason: `exported ${findings.length} findings and ${reportCoverage.length} coverage entries as ${formats.join("+")}; coverage=${coverage}; evidence=${evidenceMode}; redact=${redact}`,
       args: outDir,
     })
 
@@ -193,6 +211,7 @@ export const secReport = tool({
       `report exported to ${res.dir}`,
       ...res.files.map((f) => `  ${f.format.padEnd(4)} ${f.path}`),
     ]
+    if (res.coveragePath) lines.push(`  coverage ${res.coveragePath}`)
     if (!args.out_dir && reportHost) lines.push(`  filed under target: ${targetPathsFor(c, reportHost).root}`)
     if (!args.out_dir && !reportHost && hosts.length > 1) {
       lines.push(
@@ -208,7 +227,16 @@ export const secReport = tool({
       `  coverage: ${covered}`,
       `  findings: ${findings.length} (critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}, info ${counts.info})`,
       `  evidence artifacts: ${evidence.length}${evidenceMode === "full" ? " (content embedded)" : ""}`,
+      `  coverage ledger: ${reportCoverage.length} entr${reportCoverage.length === 1 ? "y" : "ies"} ` +
+        `(reported ${reportCoverageSummary.by_outcome.reported}, no_issue_found ${reportCoverageSummary.by_outcome.no_issue_found}, ` +
+        `ruled_out ${reportCoverageSummary.by_outcome.ruled_out}, needs_follow_up ${reportCoverageSummary.by_outcome.needs_follow_up})`,
     )
+    if (threatModels.length) {
+      lines.push(`  threat model: ${threatModels[0]!.target} (revision ${threatModels[0]!.revision})`)
+    }
+    if (!reportCoverage.length) {
+      lines.push("  WARNING: no coverage ledger entries for this scope; the report will state that negative space is unrecorded")
+    }
     if (dropped) lines.push(`  ${dropped}`)
     if (coverage === "session" && findings.length === 0 && selection.drops.otherSession > 0) {
       lines.push(

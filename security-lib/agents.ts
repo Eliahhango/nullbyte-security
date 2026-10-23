@@ -74,6 +74,8 @@ export interface RunAgentPlanOptions {
   model?: AgentModel
   concurrency?: number
   timeoutMs?: number
+  /** additional attempts after a transient network/TLS failure (default 2, max 5) */
+  retries?: number
   signal?: AbortSignal
   hooks?: AgentPlanHooks
 }
@@ -87,6 +89,8 @@ export const MAX_AGENT_TASKS = 8
 export const MAX_AGENT_CONCURRENCY = 8
 export const DEFAULT_AGENT_CONCURRENCY = 4
 export const DEFAULT_AGENT_TIMEOUT_MS = 900_000
+export const DEFAULT_AGENT_RETRIES = 2
+export const MAX_AGENT_RETRIES = 5
 const MAX_TASK_OUTPUT = 16_000
 
 const TASK_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/
@@ -111,6 +115,45 @@ function describeError(error: unknown): string {
     }
   }
   return String(error)
+}
+
+/**
+ * Provider failures are often transient: a dropped socket or a broken IPv6 path
+ * is not the child's fault and retrying a fresh session usually succeeds. Only
+ * errors that name a connection/TLS/transport condition are retried; a tool or
+ * model error is returned immediately.
+ */
+const TRANSIENT_ERROR = [
+  /unknown certificate verification error/i,
+  /socket connection was closed/i,
+  /socket hang up/i,
+  /ECONNRESET|ECONNREFUSED|ECONNABORTED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH/i,
+  /fetch failed/i,
+  /connection (?:reset|closed|refused|timed out)/i,
+  /network (?:error|is unreachable|unavailable)/i,
+  /tls (?:handshake|connection)/i,
+  /rate limit|too many requests|overloaded|temporarily unavailable/i,
+  /(?:502|503|504) (?:bad gateway|service unavailable|gateway timeout)/i,
+]
+
+function isTransientError(message: string): boolean {
+  return TRANSIENT_ERROR.some((pattern) => pattern.test(message))
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve()
+      return
+    }
+    const timer = setTimeout(done, ms)
+    function done() {
+      clearTimeout(timer)
+      signal?.removeEventListener("abort", done)
+      resolve()
+    }
+    signal?.addEventListener("abort", done, { once: true })
+  })
 }
 
 function resultError(result: any): string {
@@ -291,7 +334,7 @@ interface ChildRunResult {
   durationMs: number
 }
 
-async function runChild(
+async function runChildOnce(
   client: AgentClient,
   options: {
     parentID: string
@@ -393,16 +436,88 @@ async function runChild(
     if (timedOut) return { sessionID, output: "", error: "timed out", timedOut: true, durationMs }
     if (cancelled) return { sessionID, output: "", error: "cancelled", cancelled: true, durationMs }
     const error = resultError(result)
-    if (error) return { sessionID, output: "", error, durationMs }
+    if (error) {
+      abortChild()
+      return { sessionID, output: "", error, durationMs }
+    }
     return { sessionID, output: responseText(result?.data), durationMs }
   } catch (error) {
     const durationMs = Date.now() - started
     if (timedOut) return { sessionID, output: "", error: "timed out", timedOut: true, durationMs }
     if (cancelled) return { sessionID, output: "", error: "cancelled", cancelled: true, durationMs }
+    abortChild()
     return { sessionID, output: "", error: describeError(error), durationMs }
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener("abort", onAbort)
+  }
+}
+
+/**
+ * Run one child, retrying only transport-shaped failures. Each retry gets a
+ * fresh session; the overall deadline is shared so retries cannot extend a task
+ * past the caller's timeout. The returned duration is wall-clock across attempts.
+ */
+async function runChild(
+  client: AgentClient,
+  options: {
+    parentID: string
+    directory: string
+    title: string
+    agent?: string
+    model?: AgentModel
+    prompt: string
+    timeoutMs: number
+    retries?: number
+    signal?: AbortSignal
+  },
+): Promise<ChildRunResult> {
+  const started = Date.now()
+  const extra = Math.max(0, Math.min(options.retries ?? DEFAULT_AGENT_RETRIES, MAX_AGENT_RETRIES))
+  const attempts = 1 + extra
+  let last: ChildRunResult | undefined
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const remaining = options.timeoutMs - (Date.now() - started)
+    if (remaining <= 0) {
+      return {
+        sessionID: last?.sessionID ?? "",
+        output: "",
+        error: "timed out",
+        timedOut: true,
+        durationMs: Date.now() - started,
+      }
+    }
+
+    const result = await runChildOnce(client, { ...options, timeoutMs: remaining })
+    result.durationMs = Date.now() - started
+
+    if (result.cancelled) return result
+    if (result.timedOut) return result
+    if (!result.error) return result
+    if (!isTransientError(result.error)) return result
+
+    last = result
+    if (attempt === attempts) {
+      return { ...result, error: `${result.error} (after ${attempt} attempts)`, durationMs: Date.now() - started }
+    }
+
+    const delay = Math.min(1_000 * 2 ** (attempt - 1), 4_000)
+    const timeLeft = options.timeoutMs - (Date.now() - started)
+    if (timeLeft <= delay) {
+      return { ...result, error: `${result.error} (retry budget exhausted)`, durationMs: Date.now() - started }
+    }
+    await sleep(delay, options.signal)
+    if (options.signal?.aborted) {
+      return { sessionID: "", output: "", error: "cancelled", cancelled: true, durationMs: Date.now() - started }
+    }
+  }
+
+  return {
+    sessionID: last?.sessionID ?? "",
+    output: "",
+    error: last?.error ?? "agent failed",
+    durationMs: Date.now() - started,
   }
 }
 
@@ -442,6 +557,7 @@ async function planTasks(
     prompt,
     model: available.find((agent) => agent.name === defaultAgent)?.model ?? model,
     timeoutMs: options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+    retries: options.retries,
     signal: options.signal,
   })
   if (child.error) throw new Error(`planner failed: ${child.error}`)
@@ -529,6 +645,7 @@ export async function runAgentPlan(options: RunAgentPlanOptions): Promise<AgentP
       model: available.find((agent) => agent.name === task.agent)?.model ?? model,
       prompt: task.prompt,
       timeoutMs: options.timeoutMs ?? DEFAULT_AGENT_TIMEOUT_MS,
+      retries: options.retries,
       signal: options.signal,
     })
     const status: AgentTaskStatus = child.cancelled

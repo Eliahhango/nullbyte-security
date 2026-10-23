@@ -15,7 +15,33 @@ interfaces preserved, the host CLI touched only where unavoidable.
 | Tool surfaces | progressive-disclosure `sec_methodology`; closure-aware `sec_finding` | `tools/knowledge.ts`, `tools/findings.ts` |
 | Reporting | closure summary, counterevidence, assumptions, fix effort, evidence states | `report.ts` |
 | **Scope enforcement** | per-port authorization for `sec_ports` / `sec_scan` (P0 fix) | `scope.ts`, `tools/shared.ts`, `tools/ports.ts`, `tools/scan.ts` |
-| Tests | 75 → 114 | `__tests__/*` |
+| Coverage ledger | surface × risk outcomes, duplicate rejection, revision history, report section, JSON sidecar and SARIF summary | `coverage.ts`, `tools/coverage.ts` |
+| Threat model | shared per-target model, save/amend with append-only amendments, report embedding | `threat-model.ts`, `tools/threat-model.ts` |
+| Agent resilience | transient provider/TLS/socket retry in a fresh child session, shared deadline, configurable attempts | `agents.ts`, `tools/agents.ts` |
+| Reporting | coverage and threat-model sections; `*.coverage.json`; SARIF coverage notification | `report.ts`, `interop.ts` |
+| Tests | 331 → 343 | `__tests__/*` |
+
+## Strix adoption roadmap
+
+`usestrix/strix` is a Python/LiteLLM/Docker harness, so the runtime is not
+portable. The useful part is its control-plane design. Adopt the concepts, not
+the deployment model.
+
+| Priority | Capability | Gap in NullByte | Status |
+|---|---|---|---|
+| 1 | Coverage ledger | Reports could not distinguish "tested and sound" from "never tested" | **Shipped** |
+| 2 | Shared threat model | No per-target actors/assets/trust-boundary record shared across agents | **Shipped** |
+| 3 | Transport retry | A dropped provider socket failed a whole child; broken IPv6 made this frequent | **Shipped** |
+| 4 | Persistent agent graph | `sec_agents` runs one batch and returns; no create/send/wait/stop/view across turns | Next |
+| 5 | Scan modes and budgets | No quick/deep mode, token/step budget or cost guardrail | Next |
+| 6 | Session resume | A long assessment cannot be paused and resumed from the same plan state | Next |
+| 7 | Notes and todos | No shared engagement notebook separate from findings and methodology | Next |
+| 8 | API-spec testing | No OpenAPI/GraphQL-driven endpoint and authz matrix | Next |
+| 9 | Web intelligence | No search/fetch research loop with provenance | Later |
+| 10 | Proxy/browser/MCP | No browser or proxy integration; would add large dependencies | Later |
+
+The next batch should land items 4-6 together: a persisted plan/agent graph,
+bounded execution budgets, and resume state. Items 7-8 can follow independently.
 
 ## Next
 

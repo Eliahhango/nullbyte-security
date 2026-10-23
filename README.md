@@ -41,8 +41,9 @@ Security capability layer for the [NullByte](https://github.com/Eliahhango) CLI.
 An agentic offensive-security toolset that thinks in targets, but is held down
 by scope checks, evidence hashes and an audit chain — not by vibes.
 
-`sec_*` tools cover the full loop: scope, recon, ports, scanners, SAST, evidence,
-findings, retesting, reporting, methodology and audit.
+`sec_*` tools cover the full loop: scope, recon, ports, scanners, SAST, the
+shared threat model, evidence, findings, coverage, retesting, reporting,
+methodology and audit.
 
 ## `DEMO`
 
@@ -58,6 +59,7 @@ findings, retesting, reporting, methodology and audit.
 - **Evidence is checked before it is trusted.** Artifacts carry SHA-256 digests and are re-hashed on read.
 - **Findings cannot be closed without proof.** The closure gate is code, not a suggestion.
 - **Reports are deliverables**, not chat transcripts: markdown, JSON, HTML, PDF, SARIF and DefectDojo CSV.
+- **Negative space is recorded.** A coverage ledger and shared threat model let the report distinguish "tested and sound" from "never tested".
 
 ## `QUICKSTART`
 
@@ -113,6 +115,8 @@ Long scans render a live progress line with elapsed time and counters; set
 | `sec_sast` | local secrets, code smells and dependency checks |
 | `sec_evidence` | store and verify raw artifacts by SHA-256 |
 | `sec_finding` | findings, CVSS severity, dedupe and closure checks |
+| `sec_coverage` | record tested surfaces and outcomes; expose the negative space in reports |
+| `sec_threat_model` | shared per-target threat model with append-only amendments |
 | `sec_retest` | re-run or record a finding's reproduction |
 | `sec_report` | export markdown, JSON, HTML, PDF, SARIF or CSV |
 | `sec_methodology` | search and load shared knowledge fragments |

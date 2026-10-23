@@ -18,6 +18,10 @@ import { redactSecrets } from "./redact.ts"
 import { collectCredentials, renderCredentialsMarkdown } from "./credentials.ts"
 import type { CredentialRecord } from "./credentials.ts"
 import type { EvidenceRecord } from "./evidence.ts"
+import type { CoverageEntry, CoverageSummary } from "./coverage.ts"
+import type { ThreatModelEntry } from "./threat-model.ts"
+import { renderCoverageJson, coverageSummary as summarizeCoverage } from "./coverage.ts"
+import { renderThreatModelMarkdown } from "./threat-model.ts"
 import type { Finding, Severity } from "./types.ts"
 
 /**
@@ -81,6 +85,12 @@ export interface ReportInput {
   objectives?: string
   /** operator-supplied testing window; activity timestamps are derived when absent */
   testWindow?: string
+  /** coverage ledger entries selected for this report; [] means "nothing recorded" */
+  coverage?: CoverageEntry[]
+  /** precomputed summary, to avoid recomputing when the caller already has it */
+  coverageSummary?: CoverageSummary
+  /** threat models for the target(s) this report covers */
+  threatModels?: ThreatModelEntry[]
 }
 
 const SEV_LABEL: Record<Severity, string> = {
@@ -302,6 +312,87 @@ const DISCLAIMER =
   "include live credentials that must be rotated once the engagement closes."
 
 
+const OUTCOME_LABEL: Record<string, string> = {
+  reported: "Reported",
+  no_issue_found: "No issue found",
+  ruled_out: "Ruled out",
+  not_applicable: "Not applicable",
+  needs_follow_up: "Needs follow-up",
+}
+
+function coverageSection(input: ReportInput): string[] {
+  if (input.coverage === undefined) return []
+  const entries = input.coverage
+  const summary = input.coverageSummary ?? summarizeCoverage(entries, input.findings)
+  const lines = ["## Coverage", ""]
+  if (summary.empty) {
+    lines.push(
+      "No coverage ledger entries were recorded. The findings below are therefore not accompanied by a statement of " +
+        "what was tested and found sound; an empty result must not be read as evidence that the target is secure.",
+    )
+    lines.push("")
+    return lines
+  }
+
+  lines.push(
+    `The ledger records **${summary.total}** surface/risk observation${summary.total === 1 ? "" : "s"}. ` +
+      "These are the tester's conclusions about the negative space of the assessment, not a claim that an untested surface is safe.",
+  )
+  lines.push("")
+  lines.push("| Outcome | Count |")
+  lines.push("| --- | --- |")
+  for (const outcome of ["reported", "no_issue_found", "ruled_out", "not_applicable", "needs_follow_up"]) {
+    lines.push(`| ${OUTCOME_LABEL[outcome]} | ${summary.by_outcome[outcome as keyof typeof summary.by_outcome] ?? 0} |`)
+  }
+  lines.push("")
+
+  if (summary.needs_follow_up > 0) {
+    lines.push(`**${summary.needs_follow_up}** entry${summary.needs_follow_up === 1 ? "" : "s"} still need a follow-up.`)
+    lines.push("")
+  }
+  if (summary.findings_without_coverage.length > 0) {
+    lines.push(
+      `**Coverage gap:** ${summary.findings_without_coverage.length} finding${summary.findings_without_coverage.length === 1 ? "" : "s"} ` +
+        "have no linked coverage entry — the ledger may be incomplete:",
+    )
+    lines.push("")
+    for (const gap of summary.findings_without_coverage.slice(0, 50)) {
+      lines.push(`- ${gap.id} — ${gap.title}`)
+    }
+    lines.push("")
+  }
+
+  lines.push("### Covered surfaces")
+  lines.push("")
+  lines.push("| Target | Surface | Risk area | Outcome | Detail | Finding |")
+  lines.push("| --- | --- | --- | --- | --- | --- |")
+  for (const entry of entries) {
+    lines.push(
+      `| ${cell(entry.target ?? "—")} | ${cell(entry.surface)} | ${cell(entry.risk_area)} | ` +
+        `${OUTCOME_LABEL[entry.outcome] ?? entry.outcome} | ${cell(entry.evidence ?? "—", 240)} | ${entry.finding_id ?? "—"} |`,
+    )
+  }
+  lines.push("")
+  return lines
+}
+
+function threatModelSection(input: ReportInput): string[] {
+  if (!input.threatModels?.length) return []
+  const lines = ["## Threat model", ""]
+  lines.push(
+    "The model below records the actors, assets, trust boundaries and hypotheses that framed the assessment. " +
+      "Amendments are retained so the reasoning can be reviewed after the fact.",
+  )
+  lines.push("")
+  for (const model of input.threatModels) {
+    lines.push(`### ${model.target}`)
+    lines.push("")
+    lines.push(renderThreatModelMarkdown(model))
+    lines.push("")
+  }
+  return lines
+}
+
 export function renderMarkdown(input: ReportInput): string {
   const generatedAt = input.generatedAt ?? new Date().toISOString()
   const counts = severitySummary(input.findings)
@@ -331,6 +422,7 @@ export function renderMarkdown(input: ReportInput): string {
   lines.push("")
   lines.push(...backgroundLines(input))
   lines.push("")
+  lines.push(...threatModelSection(input))
 
   lines.push("## Authorized scope")
   lines.push("")
@@ -374,6 +466,7 @@ export function renderMarkdown(input: ReportInput): string {
     lines.push("No findings were recorded. This is not evidence of absence: see Limitations.")
     lines.push("")
   }
+  lines.push(...coverageSection(input))
 
   lines.push("## Credentials")
   lines.push("")
@@ -623,6 +716,9 @@ export function renderJson(input: ReportInput): string {
           })),
       },
       credentials: collectCredentials(input),
+      threat_models: input.threatModels ?? null,
+      coverage: input.coverage ?? null,
+      coverage_summary: input.coverage ? input.coverageSummary ?? summarizeCoverage(input.coverage, input.findings) : null,
       findings: input.findings,
       remediation_roadmap: remediationRoadmap(input.findings).map((f, i) => ({
         priority: i + 1,
@@ -709,6 +805,58 @@ ${c.context ? `<pre>${escHtml(c.context)}</pre>` : ""}
 </article>`
   })
   .join("\n")}`
+}
+
+function threatModelsHtml(input: ReportInput): string {
+  if (!input.threatModels?.length) return ""
+  return `<h2>Threat model</h2>
+<p>The model below records the actors, assets, trust boundaries and hypotheses that framed the assessment. Amendments are retained so the reasoning can be reviewed after the fact.</p>
+${input.threatModels
+  .map(
+    (model) =>
+      `<article class="finding"><h3>${escHtml(model.target)}</h3><pre>${escHtml(renderThreatModelMarkdown(model))}</pre></article>`,
+  )
+  .join("\n")}`
+}
+
+function coverageHtml(input: ReportInput): string {
+  if (input.coverage === undefined) return ""
+  const entries = input.coverage
+  const summary = input.coverageSummary ?? summarizeCoverage(entries, input.findings)
+  if (summary.empty) {
+    return `<h2>Coverage</h2>
+<p>No coverage ledger entries were recorded. The findings below are therefore not accompanied by a statement of what was tested and found sound; an empty result must not be read as evidence that the target is secure.</p>`
+  }
+
+  const countRows = ["reported", "no_issue_found", "ruled_out", "not_applicable", "needs_follow_up"]
+    .map(
+      (outcome) =>
+        `<tr><td>${escHtml(OUTCOME_LABEL[outcome])}</td><td>${summary.by_outcome[outcome as keyof typeof summary.by_outcome] ?? 0}</td></tr>`,
+    )
+    .join("")
+  const gapRows = summary.findings_without_coverage.length
+    ? `<p><strong>Coverage gap:</strong> ${summary.findings_without_coverage.length} finding(s) have no linked coverage entry — the ledger may be incomplete.</p>
+<ul>${summary.findings_without_coverage
+        .slice(0, 50)
+        .map((gap) => `<li><code>${escHtml(gap.id)}</code> — ${escHtml(gap.title)}</li>`)
+        .join("")}</ul>`
+    : ""
+  const surfaceRows = entries
+    .map(
+      (entry) =>
+        `<tr><td>${escHtml(entry.target ?? "—")}</td><td>${escHtml(entry.surface)}</td><td>${escHtml(entry.risk_area)}</td><td>${escHtml(
+          OUTCOME_LABEL[entry.outcome] ?? entry.outcome,
+        )}</td><td>${escHtml(entry.evidence ?? "—")}</td><td>${escHtml(entry.finding_id ?? "—")}</td></tr>`,
+    )
+    .join("")
+
+  return `<h2>Coverage</h2>
+<p>The ledger records <strong>${summary.total}</strong> surface/risk observation${summary.total === 1 ? "" : "s"}. These are the tester's conclusions about the negative space of the assessment, not a claim that an untested surface is safe.</p>
+<table class="summary"><thead><tr><th>Outcome</th><th>Count</th></tr></thead><tbody>${countRows}</tbody></table>
+${summary.needs_follow_up > 0 ? `<p><strong>${summary.needs_follow_up}</strong> entry(ies) still need a follow-up.</p>` : ""}
+${gapRows}
+<h3>Covered surfaces</h3>
+<table><thead><tr><th>Target</th><th>Surface</th><th>Risk area</th><th>Outcome</th><th>Detail</th><th>Finding</th></tr></thead><tbody>${surfaceRows}</tbody></table>`
 }
 
 const SEV_CLASS: Record<Severity, string> = {
@@ -1058,6 +1206,8 @@ ${execHtml}
 <h2>Background and objectives</h2>
 ${backgroundHtml}
 
+${threatModelsHtml(input)}
+
 <h2>Authorized scope</h2>
 <pre>${escHtml(input.scopeSummary)}</pre>
 
@@ -1074,6 +1224,8 @@ ${(["critical", "high", "medium", "low", "info"] as Severity[])
     closures.ruled_out
   }</strong> ruled out. A proof gap is not a dismissal — it means the candidate was plausible and neither confirmed nor excluded within this engagement.</p>
 ${findingsIndexHtml}
+
+${coverageHtml(input)}
 
 <h2>Credentials</h2>
 ${credentialsHtml}
@@ -1152,6 +1304,8 @@ export interface WriteReportResult {
   sarifPath?: string
   /** present when the csv interop format was requested */
   csvPath?: string
+  /** present when coverage was supplied */
+  coveragePath?: string
 }
 
 /**
@@ -1225,6 +1379,11 @@ export function writeReport(root: string, input: ReportInput, opts: WriteReportO
   out.jsonPath = files.find((f) => f.format === "json")?.path
   out.sarifPath = files.find((f) => f.format === "sarif")?.path
   out.csvPath = files.find((f) => f.format === "csv")?.path
+  if (input.coverage !== undefined) {
+    const coveragePath = join(dir, `${base}.coverage.json`)
+    atomicWriteFile(coveragePath, clean(renderCoverageJson(input.coverage, input.findings)))
+    out.coveragePath = coveragePath
+  }
   return out
 }
 

@@ -111,7 +111,8 @@ export const FRAGMENTS: Fragment[] = [
     title: "Reporting and remediation",
     tags: ["reporting", "process"],
     body: [
-      "Create one finding per distinct issue via sec_finding, then generate the report with sec_report.",
+      "Create one finding per distinct issue via sec_finding, record what was tested and found sound with sec_coverage, and save/amend the shared model with sec_threat_model before deep testing.",
+      "Generate the report with sec_report; it selects findings and coverage by the same scope and embeds the threat model.",
       "Each finding needs: title, severity (preferably derived from CVSS 3.1 base metrics), affected asset and endpoint, evidence, impact, and remediation.",
       "Remediation must be actionable and specific to the observed stack — not 'apply security best practices'.",
       "Always state limitations: what was not tested, what was blocked, what remains unverified.",
